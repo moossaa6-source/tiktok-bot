@@ -1,3 +1,5 @@
+import os
+TOKEN = os.environ.get("TOKEN")
 import sqlite3
 import requests
 import re
