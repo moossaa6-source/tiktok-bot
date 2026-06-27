@@ -1,8 +1,4 @@
-import os
-TOKEN = os.environ.get("TOKEN")
-import sqlite3
-import requests
-import re
+
 import os
 import threading
 from flask import Flask
