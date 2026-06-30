@@ -2,6 +2,7 @@ import sqlite3
 import requests
 import os
 import asyncio
+import yt_dlp
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -21,25 +22,33 @@ def init_db():
 
 init_db()
 
-# دالة إرسال الفيديو التلقائي
+# جلب رابط ترند تلقائي
+def get_latest_trend_url():
+    ydl_opts = {'quiet': True, 'extract_flat': True}
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info("https://www.tiktok.com/tag/foryou", download=False)
+        return info['entries'][0]['url']
+
+# إرسال ترند تلقائي
 async def send_trends_auto(app: Application):
-    video_url = "https://www.tiktok.com/@tiktok/video/7386762319208082694"
     try:
-        data = requests.post("https://www.tikwm.com/api/", data={"url": video_url, "hd": 1}, timeout=15).json().get("data", {})
+        trend_url = get_latest_trend_url()
+        data = requests.post("https://www.tikwm.com/api/", data={"url": trend_url, "hd": 1}, timeout=15).json().get("data", {})
         video_file = data.get("hdplay") or data.get("play")
         conn = sqlite3.connect('bot_data.db')
         users = conn.cursor().execute("SELECT user_id FROM users").fetchall()
         conn.close()
         for user in users:
             try: 
-                await app.bot.send_video(chat_id=user[0], video=video_file, caption="🔥 فيديو الترند اليومي!")
-                await asyncio.sleep(0.5)
+                await app.bot.send_video(chat_id=user[0], video=video_file, caption="🔥 فيديو الترند الجديد تلقائياً!")
+                await asyncio.sleep(1)
             except: pass
-    except: pass
+    except Exception as e:
+        print(f"Error in auto-trend: {e}")
 
 async def post_init(application: Application):
     scheduler = AsyncIOScheduler()
-    # يرسل كل دقيقة حالياً للتجربة
+    # يرسل كل دقيقة للتجربة (يمكنك تغيير minutes إلى hours=24 لاحقاً)
     scheduler.add_job(send_trends_auto, 'interval', minutes=1, args=[application])
     scheduler.start()
 
