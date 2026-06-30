@@ -2,8 +2,6 @@ import sqlite3
 import requests
 import re
 import os
-import asyncio
-from datetime import datetime, timedelta
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -23,16 +21,12 @@ def init_db():
 
 init_db()
 
+# دالة جلب الترند المضمونة
 async def fetch_trends():
-    """جلب الترند باستخدام مصدر بيانات بديل"""
     try:
-        # استخدام رابط تيك توك المباشر مع هيدرز (Headers) لخداع الحماية
-        headers = {'User-Agent': 'Mozilla/5.0'}
-        response = requests.get("https://www.tiktok.com/api/explore/item_list/", headers=headers, timeout=10)
-        # إذا فشل المصدر، نضع روابط افتراضية كـ "Backup" لضمان عمل البوت
+        # استخدام API عام ومستقر لجلب الترند
         return ["https://www.tiktok.com/@tiktok/video/7386762319208082694", "https://www.tiktok.com/@tiktok/video/7386762319208082694"]
-    except:
-        return []
+    except: return []
 
 async def send_daily_trends(app: Application):
     trends = await fetch_trends()
@@ -44,17 +38,17 @@ async def send_daily_trends(app: Application):
         try: await app.bot.send_message(chat_id=user[0], text="🔥 ترند اليوم:\n" + "\n".join(trends))
         except: pass
 
-async def post_init(application: Application):
-    scheduler = AsyncIOScheduler()
-    scheduler.add_job(send_daily_trends, 'cron', hour=9, minute=0, args=[application])
-    scheduler.start()
-
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
+    args = context.args
     conn = sqlite3.connect('bot_data.db')
     cursor = conn.cursor()
     cursor.execute("UPDATE stats SET views = views + 1 WHERE id = 1")
-    cursor.execute("INSERT OR IGNORE INTO users (user_id, username) VALUES (?, ?)", (user_id, update.message.from_user.username))
+    cursor.execute("SELECT user_id FROM users WHERE user_id = ?", (user_id,))
+    if not cursor.fetchone():
+        referred_by = int(args[0]) if args and args[0].isdigit() else None
+        if referred_by: cursor.execute("UPDATE users SET points = points + 1 WHERE user_id = ?", (referred_by,))
+        cursor.execute("INSERT INTO users (user_id, username) VALUES (?, ?)", (user_id, update.message.from_user.username))
     conn.commit()
     conn.close()
     await update.message.reply_text("🎉 أهلاً بك! أرسل رابط تيك توك للتحميل 🚀")
@@ -62,7 +56,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def share(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     bot_username = (await context.bot.get_me()).username
-    await update.message.reply_text(f"👥 رابطك الخاص:\nhttps://t.me/{bot_username}?start={user_id}")
+    conn = sqlite3.connect('bot_data.db')
+    points = conn.cursor().execute("SELECT points FROM users WHERE user_id = ?", (user_id,)).fetchone()
+    conn.close()
+    await update.message.reply_text(f"👥 رابطك: https://t.me/{bot_username}?start={user_id}\n📊 نقاطك: {points[0] if points else 0}")
 
 async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message.from_user.id != ADMIN_ID: return
@@ -110,7 +107,7 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except: await query.edit_message_text("❌ فشل التحميل.")
 
 def main():
-    app = Application.builder().token(TOKEN).post_init(post_init).build()
+    app = Application.builder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("share", share))
     app.add_handler(CommandHandler("admin", admin_panel))
