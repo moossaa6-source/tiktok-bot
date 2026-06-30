@@ -96,13 +96,15 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.message.delete()
     except: await query.edit_message_text("❌ فشل التحميل.")
 
-def main():
-    app = Application.builder().token(TOKEN).build()
-    
-    # تهيئة المجدول
+async def post_init(application: Application):
+    # تشغيل المجدول هنا يضمن وجود Event Loop نشط
     scheduler = AsyncIOScheduler()
-    scheduler.add_job(send_daily_trends, 'cron', hour=0, minute=1, args=[app])
+    scheduler.add_job(send_daily_trends, 'cron', hour=9, minute=0, args=[application])
     scheduler.start()
+
+def main():
+    # إضافة post_init لتهيئة المجدول عند تشغيل التطبيق
+    app = Application.builder().token(TOKEN).post_init(post_init).build()
     
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("share", share))
