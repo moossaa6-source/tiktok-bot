@@ -6,7 +6,8 @@ import yt_dlp
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 
-TOKEN = os.environ.get("TOKEN")
+# التوكن الجديد
+TOKEN = "8895284125:AAEKiyC1Jlj-6vBpyz0-PLylDudh6S3o1w4"
 CHANNEL_USERNAME = '@MyDesign_Channels'
 ADMIN_ID = 8192715650
 
@@ -119,7 +120,6 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except: await query.edit_message_text("❌ فشل التحميل.")
 
 def main():
-    # استخدام drop_pending_updates=True يمنع حدوث الـ Conflict
     app = Application.builder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("share", share))
