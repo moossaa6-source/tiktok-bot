@@ -2,8 +2,6 @@ import sqlite3
 import requests
 import re
 import os
-import threading
-from flask import Flask
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 
@@ -11,12 +9,6 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 TOKEN = os.environ.get("TOKEN")
 CHANNEL_USERNAME = '@MyDesign_Channels'
 ADMIN_ID = 8192715650
-
-# خادم مصغر لضمان عمل البوت على Render
-app_web = Flask(__name__)
-@app_web.route('/')
-def home(): return "Bot is running!"
-def run_web(): app_web.run(host='0.0.0.0', port=10000)
 
 def init_db():
     conn = sqlite3.connect('bot_data.db')
@@ -41,7 +33,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         cursor.execute("INSERT INTO users (user_id, username, referred_by) VALUES (?, ?, ?)", (user_id, username, referred_by))
         conn.commit()
     conn.close()
-    await update.message.reply_text(f"🎉 أهلاً بك يا {update.message.from_user.first_name}!\nالبوت جاهز. أرسل رابط تيك توك للتحميل! 🚀")
+    await update.message.reply_text(f"🎉 أهلاً بك يا {update.message.from_user.first_name}!\nالبوت يعمل الآن ومستعد للتحميل. أرسل رابط تيك توك! 🚀")
 
 async def share(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
@@ -57,8 +49,7 @@ async def share(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     url = update.message.text
     if not re.search(r'tiktok\.com', url):
-        await update.message.reply_text("❌ يرجى إرسال رابط تيك توك صحيح.")
-        return
+        return # تجاهل الرسائل التي ليست روابط تيك توك
     context.user_data['last_tiktok_url'] = url
     keyboard = [[InlineKeyboardButton("🎬 تحميل فيديو HD", callback_data="vid")], [InlineKeyboardButton("🎵 تحميل صوت MP3", callback_data="aud")]]
     await update.message.reply_text("🎬 اختر الصيغة:", reply_markup=InlineKeyboardMarkup(keyboard))
@@ -71,10 +62,11 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await query.edit_message_text("⏳ جاري المعالجة...")
     try:
-        data = requests.post("https://www.tikwm.com/api/", data={"url": url, "hd": 1}, timeout=15).json().get("data", {})
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
+        data = requests.post("https://www.tikwm.com/api/", data={"url": url, "hd": 1}, headers=headers, timeout=15).json().get("data", {})
         bot_username = (await context.bot.get_me()).username
         caption = f"✨ تم التحميل بواسطة @{bot_username}\n📌 تابعنا: {CHANNEL_USERNAME}"
-        share_keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("📤 شارك البوت مع صديق", switch_inline_query=f"جرب أسرع بوت تحميل تيك توك: @{bot_username}")]])
+        share_keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("📤 شارك البوت", switch_inline_query=f"أفضل بوت تحميل تيك توك: @{bot_username}")]])
         
         if query.data == "vid":
             await query.message.reply_video(video=data.get("hdplay") or data.get("play"), caption=caption, reply_markup=share_keyboard)
@@ -107,7 +99,6 @@ async def send_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("✅ تمت الإذاعة.")
 
 def main():
-    threading.Thread(target=run_web).start()
     app = Application.builder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("share", share))
@@ -116,6 +107,7 @@ def main():
     app.add_handler(CallbackQueryHandler(button_click, pattern="^(vid|aud)$"))
     app.add_handler(MessageHandler(filters.TEXT & filters.ChatType.PRIVATE & ~filters.COMMAND, send_broadcast), group=1)
     app.add_handler(MessageHandler(filters.TEXT & filters.ChatType.PRIVATE & ~filters.COMMAND, handle_message), group=2)
+    print("البوت يعمل الآن بنجاح...")
     app.run_polling()
 
 if __name__ == "__main__":
