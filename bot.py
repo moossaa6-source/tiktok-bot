@@ -24,7 +24,7 @@ init_db()
 
 # --- المجدول التلقائي للترند ---
 async def send_daily_trends(app: Application):
-    # يمكنك وضع روابط الترند هنا
+    # ضع روابط الترند هنا
     trends = ["رابط_فيديو_1", "رابط_فيديو_2", "رابط_فيديو_3"] 
     conn = sqlite3.connect('bot_data.db')
     users = conn.cursor().execute("SELECT user_id FROM users").fetchall()
@@ -53,11 +53,13 @@ async def share(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     bot_username = (await context.bot.get_me()).username
     conn = sqlite3.connect('bot_data.db')
-    points = conn.cursor().execute("SELECT points FROM users WHERE user_id = ?", (user_id,)).fetchone()[0]
+    result = conn.cursor().execute("SELECT points FROM users WHERE user_id = ?", (user_id,)).fetchone()
+    points = result[0] if result else 0
     conn.close()
     await update.message.reply_text(f"👥 رابطك: https://t.me/{bot_username}?start={user_id}\n📊 نقاطك: {points}")
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # معالجة الإذاعة للأدمن
     if update.message.from_user.id == ADMIN_ID and context.user_data.get('waiting_for_bc'):
         context.user_data['waiting_for_bc'] = False
         users = sqlite3.connect('bot_data.db').cursor().execute("SELECT user_id FROM users").fetchall()
@@ -96,6 +98,8 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def main():
     app = Application.builder().token(TOKEN).build()
+    
+    # تهيئة المجدول
     scheduler = AsyncIOScheduler()
     scheduler.add_job(send_daily_trends, 'cron', hour=0, minute=1, args=[app])
     scheduler.start()
