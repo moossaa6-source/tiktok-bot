@@ -4,7 +4,7 @@ import re
 import os
 import asyncio
 import yt_dlp
-from datetime import datetime, timedelta  # إضافة هذه المكتبة ضروري
+from datetime import datetime, timedelta
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -50,13 +50,11 @@ async def send_daily_trends(app: Application):
 
 async def post_init(application: Application):
     scheduler = AsyncIOScheduler()
-    # تصحيح التوقيت هنا باستخدام datetime
     run_time = datetime.now() + timedelta(seconds=10)
     scheduler.add_job(send_daily_trends, 'date', run_date=run_time, args=[application])
     scheduler.add_job(send_daily_trends, 'cron', hour=9, minute=0, args=[application])
     scheduler.start()
 
-# --- باقي الكود كما هو (start, share, handle_message, button_click, main) ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     args = context.args
@@ -79,6 +77,13 @@ async def share(update: Update, context: ContextTypes.DEFAULT_TYPE):
     points = result[0] if result else 0
     conn.close()
     await update.message.reply_text(f"👥 رابطك: https://t.me/{bot_username}?start={user_id}\n📊 نقاطك: {points}")
+
+async def test_trends(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message.from_user.id != ADMIN_ID: return
+    await update.message.reply_text("⏳ جاري فحص الترند...")
+    trends = await fetch_trends()
+    if not trends: await update.message.reply_text("❌ لم يتم جلب أي روابط.")
+    else: await update.message.reply_text("✅ تم جلب الروابط:\n" + "\n".join(trends))
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
@@ -120,6 +125,7 @@ def main():
     app = Application.builder().token(TOKEN).post_init(post_init).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("share", share))
+    app.add_handler(CommandHandler("test_trends", test_trends))
     app.add_handler(CommandHandler("admin", lambda u, c: u.message.reply_text("📊", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("📢 إذاعة", callback_data="admin_bc")]]))))
     app.add_handler(CallbackQueryHandler(button_click))
     app.add_handler(MessageHandler(filters.TEXT & filters.ChatType.PRIVATE, handle_message))
