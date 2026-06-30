@@ -1,6 +1,7 @@
 import sqlite3
 import requests
 import os
+import asyncio
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -20,21 +21,25 @@ def init_db():
 
 init_db()
 
+# دالة إرسال الفيديو التلقائي
 async def send_trends_auto(app: Application):
-    manual_trends = [
-        "https://www.tiktok.com/@tiktok/video/7386762319208082694",
-        "https://www.tiktok.com/@tiktok/video/7378413248835849477"
-    ]
-    conn = sqlite3.connect('bot_data.db')
-    users = conn.cursor().execute("SELECT user_id FROM users").fetchall()
-    conn.close()
-    for user in users:
-        try: await app.bot.send_message(chat_id=user[0], text="🔥 ترند اليوم:\n" + "\n".join(manual_trends))
-        except: pass
+    video_url = "https://www.tiktok.com/@tiktok/video/7386762319208082694"
+    try:
+        data = requests.post("https://www.tikwm.com/api/", data={"url": video_url, "hd": 1}, timeout=15).json().get("data", {})
+        video_file = data.get("hdplay") or data.get("play")
+        conn = sqlite3.connect('bot_data.db')
+        users = conn.cursor().execute("SELECT user_id FROM users").fetchall()
+        conn.close()
+        for user in users:
+            try: 
+                await app.bot.send_video(chat_id=user[0], video=video_file, caption="🔥 فيديو الترند اليومي!")
+                await asyncio.sleep(0.5)
+            except: pass
+    except: pass
 
 async def post_init(application: Application):
-    # المجدول يعمل هنا داخل الـ event loop
     scheduler = AsyncIOScheduler()
+    # يرسل كل دقيقة حالياً للتجربة
     scheduler.add_job(send_trends_auto, 'interval', minutes=1, args=[application])
     scheduler.start()
 
@@ -108,9 +113,7 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except: await query.edit_message_text("❌ فشل التحميل.")
 
 def main():
-    # ربط دالة post_init هنا يحل مشكلة الـ Runtime Error
     app = Application.builder().token(TOKEN).post_init(post_init).build()
-    
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("share", share))
     app.add_handler(CommandHandler("admin", admin_panel))
