@@ -99,7 +99,7 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def post_init(application: Application):
     # تشغيل المجدول هنا يضمن وجود Event Loop نشط
     scheduler = AsyncIOScheduler()
-    scheduler.add_job(send_daily_trends, 'cron', hour=9, minute=0, args=[application])
+    scheduler.add_job(send_daily_trends, 'cron', hour=0, minute=1, args=[application])
     scheduler.start()
 
 def main():
