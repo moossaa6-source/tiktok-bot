@@ -4,6 +4,7 @@ import re
 import os
 import asyncio
 import yt_dlp
+from datetime import datetime, timedelta  # إضافة هذه المكتبة ضروري
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -25,7 +26,6 @@ def init_db():
 init_db()
 
 async def fetch_trends():
-    """جلب أحدث فيديوهات الترند تلقائياً"""
     try:
         ydl_opts = {'quiet': True, 'extract_flat': True, 'playlist_items': '1,2,3'}
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -38,11 +38,9 @@ async def fetch_trends():
 async def send_daily_trends(app: Application):
     trends = await fetch_trends()
     if not trends: return
-    
     conn = sqlite3.connect('bot_data.db')
     users = conn.cursor().execute("SELECT user_id FROM users").fetchall()
     conn.close()
-    
     msg = "🔥 ترند تيك توك اليوم:\n" + "\n".join(trends)
     for user in users:
         try:
@@ -50,19 +48,15 @@ async def send_daily_trends(app: Application):
             await asyncio.sleep(0.1)
         except: continue
 
-from datetime import datetime, timedelta
-
 async def post_init(application: Application):
     scheduler = AsyncIOScheduler()
-    
-    # تشغيل الاختبار بعد 10 ثوانٍ من الآن
+    # تصحيح التوقيت هنا باستخدام datetime
     run_time = datetime.now() + timedelta(seconds=10)
     scheduler.add_job(send_daily_trends, 'date', run_date=run_time, args=[application])
-    
-    # الجدولة اليومية
     scheduler.add_job(send_daily_trends, 'cron', hour=9, minute=0, args=[application])
     scheduler.start()
 
+# --- باقي الكود كما هو (start, share, handle_message, button_click, main) ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     args = context.args
@@ -96,11 +90,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except: pass
         await update.message.reply_text("✅ تمت الإذاعة.")
         return
-
     if not re.search(r'tiktok\.com', text):
         await update.message.reply_text("❌ عذراً، أرسل رابط تيك توك صحيحاً.")
         return
-        
     context.user_data['last_tiktok_url'] = text
     keyboard = [[InlineKeyboardButton("🎬 تحميل فيديو HD", callback_data="vid")], [InlineKeyboardButton("🎵 تحميل صوت MP3", callback_data="aud")]]
     await update.message.reply_text("🎬 اختر الصيغة:", reply_markup=InlineKeyboardMarkup(keyboard))
@@ -112,10 +104,8 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data['waiting_for_bc'] = True
         await query.message.reply_text("📥 أرسل نص الإذاعة للأعضاء:")
         return
-        
     url = context.user_data.get('last_tiktok_url')
     if not url: return await query.edit_message_text("❌ انتهت الجلسة.")
-    
     await query.edit_message_text("⏳ جاري المعالجة...")
     try:
         data = requests.post("https://www.tikwm.com/api/", data={"url": url, "hd": 1}, timeout=15).json().get("data", {})
