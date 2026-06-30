@@ -22,9 +22,7 @@ def init_db():
 
 init_db()
 
-# --- المجدول التلقائي للترند ---
 async def send_daily_trends(app: Application):
-    # ضع روابط الترند هنا
     trends = ["رابط_فيديو_1", "رابط_فيديو_2", "رابط_فيديو_3"] 
     conn = sqlite3.connect('bot_data.db')
     users = conn.cursor().execute("SELECT user_id FROM users").fetchall()
@@ -34,6 +32,11 @@ async def send_daily_trends(app: Application):
             await app.bot.send_message(chat_id=user[0], text=f"🔥 ترند اليوم:\n{chr(10).join(trends)}")
             await asyncio.sleep(0.1)
         except: continue
+async def post_init(application: Application):
+    scheduler = AsyncIOScheduler()
+    # اختبار: تشغيل المجدول بعد دقيقة واحدة من عمل البوت
+    scheduler.add_job(send_daily_trends, 'interval', minutes=1, args=[application]) 
+    scheduler.start()
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
@@ -59,19 +62,23 @@ async def share(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"👥 رابطك: https://t.me/{bot_username}?start={user_id}\n📊 نقاطك: {points}")
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text
     # معالجة الإذاعة للأدمن
     if update.message.from_user.id == ADMIN_ID and context.user_data.get('waiting_for_bc'):
         context.user_data['waiting_for_bc'] = False
         users = sqlite3.connect('bot_data.db').cursor().execute("SELECT user_id FROM users").fetchall()
         for user in users:
-            try: await context.bot.send_message(chat_id=user[0], text=update.message.text)
+            try: await context.bot.send_message(chat_id=user[0], text=text)
             except: pass
         await update.message.reply_text("✅ تمت الإذاعة.")
         return
 
-    url = update.message.text
-    if not re.search(r'tiktok\.com', url): return
-    context.user_data['last_tiktok_url'] = url
+    # التحقق من الرابط
+    if not re.search(r'tiktok\.com', text):
+        await update.message.reply_text("❌ عذراً، أرسل رابط تيك توك صحيحاً.")
+        return
+        
+    context.user_data['last_tiktok_url'] = text
     keyboard = [[InlineKeyboardButton("🎬 تحميل فيديو HD", callback_data="vid")], [InlineKeyboardButton("🎵 تحميل صوت MP3", callback_data="aud")]]
     await update.message.reply_text("🎬 اختر الصيغة:", reply_markup=InlineKeyboardMarkup(keyboard))
 
@@ -96,14 +103,7 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.message.delete()
     except: await query.edit_message_text("❌ فشل التحميل.")
 
-async def post_init(application: Application):
-    # تشغيل المجدول هنا يضمن وجود Event Loop نشط
-    scheduler = AsyncIOScheduler()
-    scheduler.add_job(send_daily_trends, 'cron', hour=0, minute=1, args=[application])
-    scheduler.start()
-
 def main():
-    # إضافة post_init لتهيئة المجدول عند تشغيل التطبيق
     app = Application.builder().token(TOKEN).post_init(post_init).build()
     
     app.add_handler(CommandHandler("start", start))
