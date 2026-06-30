@@ -8,7 +8,6 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 TOKEN = os.environ.get("TOKEN")
-CHANNEL_USERNAME = '@MyDesign_Channels'
 ADMIN_ID = 8192715650
 
 def init_db():
@@ -23,33 +22,33 @@ def init_db():
 init_db()
 
 def get_latest_trend_url():
-    ydl_opts = {'quiet': True, 'extract_flat': True}
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info("https://www.tiktok.com/tag/foryou", download=False)
-        return info['entries'][0]['url']
+    try:
+        ydl_opts = {'quiet': True, 'extract_flat': True}
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info("https://www.tiktok.com/tag/foryou", download=False)
+            return info['entries'][0]['url']
+    except: return None
 
 async def send_trends_auto(app: Application):
+    trend_url = get_latest_trend_url()
+    if not trend_url: return
     try:
-        trend_url = get_latest_trend_url()
         data = requests.post("https://www.tikwm.com/api/", data={"url": trend_url, "hd": 1}, timeout=15).json().get("data", {})
         video_file = data.get("hdplay") or data.get("play")
-        
         conn = sqlite3.connect('bot_data.db')
         users = conn.cursor().execute("SELECT user_id FROM users").fetchall()
         conn.close()
-        
         for user in users:
             try: 
-                await app.bot.send_video(chat_id=user[0], video=video_file, caption="🔥 فيديو الترند الجديد!")
+                await app.bot.send_video(chat_id=user[0], video=video_file, caption="🔥 فيديو ترند جديد!")
                 await asyncio.sleep(1)
             except: pass
-    except Exception as e:
-        print(f"خطأ في الإرسال التلقائي: {e}")
+    except: pass
 
 async def post_init(application: Application):
     scheduler = AsyncIOScheduler()
-    # يتم تمرير application للـ job لضمان وصوله للـ bot
-    scheduler.add_job(send_trends_auto, 'interval', minutes=1, args=[application])
+    # إرسال كل 30 دقيقة
+    scheduler.add_job(send_trends_auto, 'interval', minutes=30, args=[application])
     scheduler.start()
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -115,21 +114,20 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         data = requests.post("https://www.tikwm.com/api/", data={"url": url, "hd": 1}, timeout=15).json().get("data", {})
         if query.data == "vid":
-            await query.message.reply_video(video=data.get("hdplay"), caption=f"📌 {CHANNEL_USERNAME}")
+            await query.message.reply_video(video=data.get("hdplay"), caption="📌 @MyDesign_Channels")
         else:
             await query.message.reply_audio(audio=data.get("music"))
         await query.message.delete()
     except: await query.edit_message_text("❌ فشل التحميل.")
 
 def main():
-    # استخدام post_init لتشغيل المجدول وضمان عدم وجود تضارب
     app = Application.builder().token(TOKEN).post_init(post_init).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("share", share))
     app.add_handler(CommandHandler("admin", admin_panel))
     app.add_handler(CallbackQueryHandler(button_click))
     app.add_handler(MessageHandler(filters.TEXT & filters.ChatType.PRIVATE, handle_message))
-    app.run_polling()
+    app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
     main()
