@@ -50,11 +50,16 @@ async def send_daily_trends(app: Application):
             await asyncio.sleep(0.1)
         except: continue
 
+from datetime import datetime, timedelta
+
 async def post_init(application: Application):
     scheduler = AsyncIOScheduler()
-    # تشغيل جلب الترند فوراً عند التشغيل (مرة واحدة)
-    scheduler.add_job(send_daily_trends, 'date', run_date=asyncio.get_event_loop().time() + 5, args=[application])
-    # جدولة العمل اليومي الساعة 9 صباحاً
+    
+    # تشغيل الاختبار بعد 10 ثوانٍ من الآن
+    run_time = datetime.now() + timedelta(seconds=10)
+    scheduler.add_job(send_daily_trends, 'date', run_date=run_time, args=[application])
+    
+    # الجدولة اليومية
     scheduler.add_job(send_daily_trends, 'cron', hour=9, minute=0, args=[application])
     scheduler.start()
 
