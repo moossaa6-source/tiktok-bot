@@ -2,8 +2,10 @@ import sqlite3
 import requests
 import re
 import os
+import asyncio
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 # إعدادات الأمان
 TOKEN = os.environ.get("TOKEN")
@@ -14,11 +16,25 @@ def init_db():
     conn = sqlite3.connect('bot_data.db')
     cursor = conn.cursor()
     cursor.execute('''CREATE TABLE IF NOT EXISTS users 
-                      (user_id INTEGER PRIMARY KEY, username TEXT, referred_by INTEGER, points INTEGER DEFAULT 0, is_premium INTEGER DEFAULT 0)''')
+                      (user_id INTEGER PRIMARY KEY, username TEXT, referred_by INTEGER, points INTEGER DEFAULT 0)''')
     conn.commit()
     conn.close()
 
 init_db()
+
+# --- دالة الإذاعة التلقائية (الترند) ---
+async def send_daily_trends(app: Application):
+    # هنا تضع روابط الترند التي تجلبها
+    trends = ["رابط_فيديو_1", "رابط_فيديو_2", "رابط_فيديو_3"] 
+    conn = sqlite3.connect('bot_data.db')
+    users = conn.cursor().execute("SELECT user_id FROM users").fetchall()
+    conn.close()
+    
+    for user in users:
+        try:
+            await app.bot.send_message(chat_id=user[0], text=f"🔥 ترند تيك توك اليوم:\n{chr(10).join(trends)}")
+            await asyncio.sleep(0.1) # لمنع الحظر
+        except: continue
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
@@ -33,23 +49,22 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         cursor.execute("INSERT INTO users (user_id, username, referred_by) VALUES (?, ?, ?)", (user_id, username, referred_by))
         conn.commit()
     conn.close()
-    await update.message.reply_text(f"🎉 أهلاً بك يا {update.message.from_user.first_name}!\nالبوت يعمل الآن ومستعد للتحميل. أرسل رابط تيك توك! 🚀")
-
-async def share(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.message.from_user.id
-    bot_username = (await context.bot.get_me()).username
-    conn = sqlite3.connect('bot_data.db')
-    cursor = conn.cursor()
-    cursor.execute("SELECT points FROM users WHERE user_id = ?", (user_id,))
-    result = cursor.fetchone()
-    points = result[0] if result else 0
-    conn.close()
-    await update.message.reply_text(f"👥 **نظام الدعوات:**\n🔗 رابطك: https://t.me/{bot_username}?start={user_id}\n📊 دعواتك: {points}")
+    await update.message.reply_text("🎉 أهلاً بك! أرسل رابط تيك توك للتحميل 🚀")
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # إذا كان الأدمن يرسل إذاعة
+    if update.message.from_user.id == ADMIN_ID and context.user_data.get('waiting_for_bc'):
+        context.user_data['waiting_for_bc'] = False
+        users = sqlite3.connect('bot_data.db').cursor().execute("SELECT user_id FROM users").fetchall()
+        for user in users:
+            try: await context.bot.send_message(chat_id=user[0], text=update.message.text)
+            except: pass
+        await update.message.reply_text("✅ تمت الإذاعة بنجاح.")
+        return
+
+    # منطق التحميل
     url = update.message.text
-    if not re.search(r'tiktok\.com', url):
-        return # تجاهل الرسائل التي ليست روابط تيك توك
+    if not re.search(r'tiktok\.com', url): return
     context.user_data['last_tiktok_url'] = url
     keyboard = [[InlineKeyboardButton("🎬 تحميل فيديو HD", callback_data="vid")], [InlineKeyboardButton("🎵 تحميل صوت MP3", callback_data="aud")]]
     await update.message.reply_text("🎬 اختر الصيغة:", reply_markup=InlineKeyboardMarkup(keyboard))
@@ -57,57 +72,39 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
+    if query.data == "admin_bc":
+        context.user_data['waiting_for_bc'] = True
+        await query.message.reply_text("📥 أرسل نص الإذاعة:")
+        return
+        
     url = context.user_data.get('last_tiktok_url')
     if not url: return await query.edit_message_text("❌ انتهت صلاحية الطلب.")
     
     await query.edit_message_text("⏳ جاري المعالجة...")
     try:
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
-        data = requests.post("https://www.tikwm.com/api/", data={"url": url, "hd": 1}, headers=headers, timeout=15).json().get("data", {})
+        data = requests.post("https://www.tikwm.com/api/", data={"url": url, "hd": 1}, timeout=15).json().get("data", {})
         bot_username = (await context.bot.get_me()).username
-        caption = f"✨ تم التحميل بواسطة @{bot_username}\n📌 تابعنا: {CHANNEL_USERNAME}"
-        share_keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("📤 شارك البوت", switch_inline_query=f"أفضل بوت تحميل تيك توك: @{bot_username}")]])
-        
+        caption = f"✨ تم بواسطة @{bot_username}\n📌 تابعنا: {CHANNEL_USERNAME}"
         if query.data == "vid":
-            await query.message.reply_video(video=data.get("hdplay") or data.get("play"), caption=caption, reply_markup=share_keyboard)
+            await query.message.reply_video(video=data.get("hdplay") or data.get("play"), caption=caption)
         else:
-            await query.message.reply_audio(audio=data.get("music"), caption=caption, reply_markup=share_keyboard)
+            await query.message.reply_audio(audio=data.get("music"), caption=caption)
         await query.message.delete()
-    except Exception:
-        await query.edit_message_text("❌ فشل التحميل.")
-
-async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.message.from_user.id != ADMIN_ID: return
-    conn = sqlite3.connect('bot_data.db')
-    count = conn.cursor().execute("SELECT COUNT(*) FROM users").fetchone()[0]
-    conn.close()
-    await update.message.reply_text(f"📊 عدد المستخدمين: {count}", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("📢 إذاعة", callback_data="admin_bc")]]))
-
-async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    if query.data == "admin_bc":
-        context.user_data['waiting_for_bc'] = True
-        await query.message.reply_text("📥 أرسل نص الإذاعة الآن:")
-
-async def send_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if context.user_data.get('waiting_for_bc'):
-        context.user_data['waiting_for_bc'] = False
-        users = sqlite3.connect('bot_data.db').cursor().execute("SELECT user_id FROM users").fetchall()
-        for user in users:
-            try: await context.bot.send_message(chat_id=user[0], text=update.message.text)
-            except: pass
-        await update.message.reply_text("✅ تمت الإذاعة.")
+    except: await query.edit_message_text("❌ فشل التحميل.")
 
 def main():
     app = Application.builder().token(TOKEN).build()
+    
+    # جدولة الترند يومياً الساعة 9 صباحاً
+    scheduler = AsyncIOScheduler()
+    scheduler.add_job(send_daily_trends, 'cron', hour=9, minute=0, args=[app])
+    scheduler.start()
+
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("share", share))
-    app.add_handler(CommandHandler("admin", admin_panel))
-    app.add_handler(CallbackQueryHandler(admin_callback, pattern="^admin_"))
-    app.add_handler(CallbackQueryHandler(button_click, pattern="^(vid|aud)$"))
-    app.add_handler(MessageHandler(filters.TEXT & filters.ChatType.PRIVATE & ~filters.COMMAND, send_broadcast), group=1)
-    app.add_handler(MessageHandler(filters.TEXT & filters.ChatType.PRIVATE & ~filters.COMMAND, handle_message), group=2)
-    print("البوت يعمل الآن بنجاح...")
+    app.add_handler(CommandHandler("admin", lambda u, c: u.message.reply_text("📊", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("📢 إذاعة", callback_data="admin_bc")]])))
+    app.add_handler(CallbackQueryHandler(button_click))
+    app.add_handler(MessageHandler(filters.TEXT & filters.ChatType.PRIVATE, handle_message))
+    
     app.run_polling()
 
 if __name__ == "__main__":
