@@ -3,6 +3,7 @@ import requests
 import re
 import os
 import asyncio
+import yt_dlp
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -17,25 +18,41 @@ def init_db():
     cursor = conn.cursor()
     cursor.execute('''CREATE TABLE IF NOT EXISTS users 
                       (user_id INTEGER PRIMARY KEY, username TEXT, referred_by INTEGER, points INTEGER DEFAULT 0)''')
+    cursor.execute('''CREATE TABLE IF NOT EXISTS trends (id INTEGER PRIMARY KEY, url TEXT)''')
     conn.commit()
     conn.close()
 
 init_db()
 
+async def fetch_trends():
+    """جلب أحدث فيديوهات الترند تلقائياً"""
+    try:
+        ydl_opts = {'quiet': True, 'extract_flat': True, 'playlist_items': '1,2,3'}
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info("https://www.tiktok.com/tag/trending", download=False)
+            return [entry['url'] for entry in info.get('entries', [])]
+    except Exception as e:
+        print(f"خطأ في جلب الترند: {e}")
+        return []
+
 async def send_daily_trends(app: Application):
-    trends = ["رابط_فيديو_1", "رابط_فيديو_2", "رابط_فيديو_3"] 
+    trends = await fetch_trends()
+    if not trends: return
+    
     conn = sqlite3.connect('bot_data.db')
     users = conn.cursor().execute("SELECT user_id FROM users").fetchall()
     conn.close()
+    
+    msg = "🔥 ترند تيك توك اليوم:\n" + "\n".join(trends)
     for user in users:
         try:
-            await app.bot.send_message(chat_id=user[0], text=f"🔥 ترند اليوم:\n{chr(10).join(trends)}")
+            await app.bot.send_message(chat_id=user[0], text=msg)
             await asyncio.sleep(0.1)
         except: continue
+
 async def post_init(application: Application):
     scheduler = AsyncIOScheduler()
-    # اختبار: تشغيل المجدول بعد دقيقة واحدة من عمل البوت
-    scheduler.add_job(send_daily_trends, 'interval', minutes=1, args=[application]) 
+    scheduler.add_job(send_daily_trends, 'cron', hour=9, minute=0, args=[application])
     scheduler.start()
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -63,7 +80,6 @@ async def share(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
-    # معالجة الإذاعة للأدمن
     if update.message.from_user.id == ADMIN_ID and context.user_data.get('waiting_for_bc'):
         context.user_data['waiting_for_bc'] = False
         users = sqlite3.connect('bot_data.db').cursor().execute("SELECT user_id FROM users").fetchall()
@@ -73,7 +89,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("✅ تمت الإذاعة.")
         return
 
-    # التحقق من الرابط
     if not re.search(r'tiktok\.com', text):
         await update.message.reply_text("❌ عذراً، أرسل رابط تيك توك صحيحاً.")
         return
@@ -105,14 +120,11 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def main():
     app = Application.builder().token(TOKEN).post_init(post_init).build()
-    
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("share", share))
     app.add_handler(CommandHandler("admin", lambda u, c: u.message.reply_text("📊", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("📢 إذاعة", callback_data="admin_bc")]]))))
     app.add_handler(CallbackQueryHandler(button_click))
     app.add_handler(MessageHandler(filters.TEXT & filters.ChatType.PRIVATE, handle_message))
-    
-    print("البوت يعمل الآن بكامل المميزات...")
     app.run_polling()
 
 if __name__ == "__main__":
