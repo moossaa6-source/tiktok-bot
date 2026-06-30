@@ -9,7 +9,6 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
-# الإعدادات
 TOKEN = os.environ.get("TOKEN")
 CHANNEL_USERNAME = '@MyDesign_Channels'
 ADMIN_ID = 8192715650
@@ -17,8 +16,7 @@ ADMIN_ID = 8192715650
 def init_db():
     conn = sqlite3.connect('bot_data.db')
     cursor = conn.cursor()
-    cursor.execute('''CREATE TABLE IF NOT EXISTS users 
-                      (user_id INTEGER PRIMARY KEY, username TEXT, referred_by INTEGER, points INTEGER DEFAULT 0)''')
+    cursor.execute('''CREATE TABLE IF NOT EXISTS users (user_id INTEGER PRIMARY KEY, username TEXT, referred_by INTEGER, points INTEGER DEFAULT 0)''')
     cursor.execute('''CREATE TABLE IF NOT EXISTS trends (id INTEGER PRIMARY KEY, url TEXT)''')
     conn.commit()
     conn.close()
@@ -27,9 +25,10 @@ init_db()
 
 async def fetch_trends():
     try:
+        # استخدام وسام ترند مشهور وتغيير طريقة الاستخراج لتكون أكثر مرونة
         ydl_opts = {'quiet': True, 'extract_flat': True, 'playlist_items': '1,2,3'}
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info("https://www.tiktok.com/tag/trending", download=False)
+            info = ydl.extract_info("https://www.tiktok.com/tag/foryou", download=False)
             return [entry['url'] for entry in info.get('entries', [])]
     except Exception as e:
         print(f"خطأ في جلب الترند: {e}")
@@ -82,7 +81,7 @@ async def test_trends(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message.from_user.id != ADMIN_ID: return
     await update.message.reply_text("⏳ جاري فحص الترند...")
     trends = await fetch_trends()
-    if not trends: await update.message.reply_text("❌ لم يتم جلب أي روابط.")
+    if not trends: await update.message.reply_text("❌ لم يتم جلب أي روابط، راجع السجلات.")
     else: await update.message.reply_text("✅ تم جلب الروابط:\n" + "\n".join(trends))
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -126,7 +125,8 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("share", share))
     app.add_handler(CommandHandler("test_trends", test_trends))
-    app.add_handler(CommandHandler("admin", lambda u, c: u.message.reply_text("📊", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("📢 إذاعة", callback_data="admin_bc")]]))))
+    # النص المباشر الجديد بدون رسم بياني
+    app.add_handler(CommandHandler("admin", lambda u, c: u.message.reply_text("🔹 لوحة تحكم الأدمن:", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("📢 إرسال إذاعة", callback_data="admin_bc")]]))))
     app.add_handler(CallbackQueryHandler(button_click))
     app.add_handler(MessageHandler(filters.TEXT & filters.ChatType.PRIVATE, handle_message))
     app.run_polling()
