@@ -97,7 +97,7 @@ def main():
     
     # جدولة الترند يومياً الساعة 9 صباحاً
     scheduler = AsyncIOScheduler()
-    scheduler.add_job(send_daily_trends, 'cron', hour=9, minute=0, args=[app])
+    scheduler.add_job(send_daily_trends, 'cron', hour=0, minute=1, args=[app])
     scheduler.start()
 
     app.add_handler(CommandHandler("start", start))
