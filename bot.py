@@ -20,7 +20,6 @@ def init_db():
 
 init_db()
 
-# دالة الإرسال التلقائي
 async def send_trends_auto(app: Application):
     manual_trends = [
         "https://www.tiktok.com/@tiktok/video/7386762319208082694",
@@ -32,6 +31,12 @@ async def send_trends_auto(app: Application):
     for user in users:
         try: await app.bot.send_message(chat_id=user[0], text="🔥 ترند اليوم:\n" + "\n".join(manual_trends))
         except: pass
+
+async def post_init(application: Application):
+    # المجدول يعمل هنا داخل الـ event loop
+    scheduler = AsyncIOScheduler()
+    scheduler.add_job(send_trends_auto, 'interval', minutes=1, args=[application])
+    scheduler.start()
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
@@ -103,12 +108,8 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except: await query.edit_message_text("❌ فشل التحميل.")
 
 def main():
-    app = Application.builder().token(TOKEN).build()
-    
-    # المجدول: كل دقيقة
-    scheduler = AsyncIOScheduler()
-    scheduler.add_job(send_trends_auto, 'interval', minutes=1, args=[app])
-    scheduler.start()
+    # ربط دالة post_init هنا يحل مشكلة الـ Runtime Error
+    app = Application.builder().token(TOKEN).post_init(post_init).build()
     
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("share", share))
