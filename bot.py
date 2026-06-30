@@ -17,7 +17,9 @@ def init_db():
     conn = sqlite3.connect('bot_data.db')
     cursor = conn.cursor()
     cursor.execute('''CREATE TABLE IF NOT EXISTS users (user_id INTEGER PRIMARY KEY, username TEXT, referred_by INTEGER, points INTEGER DEFAULT 0)''')
-    cursor.execute('''CREATE TABLE IF NOT EXISTS trends (id INTEGER PRIMARY KEY, url TEXT)''')
+    cursor.execute('''CREATE TABLE IF NOT EXISTS stats (id INTEGER PRIMARY KEY, views INTEGER)''')
+    # إضافة صف للمشاهدات إذا لم يكن موجوداً
+    cursor.execute("INSERT OR IGNORE INTO stats (id, views) VALUES (1, 0)")
     conn.commit()
     conn.close()
 
@@ -25,10 +27,11 @@ init_db()
 
 async def fetch_trends():
     try:
-        # استخدام وسام ترند مشهور وتغيير طريقة الاستخراج لتكون أكثر مرونة
+        # محاولة جلب الترند من مصدر بديل أكثر استقراراً
         ydl_opts = {'quiet': True, 'extract_flat': True, 'playlist_items': '1,2,3'}
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info("https://www.tiktok.com/tag/foryou", download=False)
+            # استخدام رابط البحث العام للترند
+            info = ydl.extract_info("https://www.tiktok.com/@tiktok/video/7386762319208082694", download=False)
             return [entry['url'] for entry in info.get('entries', [])]
     except Exception as e:
         print(f"خطأ في جلب الترند: {e}")
@@ -56,34 +59,36 @@ async def post_init(application: Application):
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
-    args = context.args
+    # زيادة المشاهدات عند كل بداية
     conn = sqlite3.connect('bot_data.db')
     cursor = conn.cursor()
+    cursor.execute("UPDATE stats SET views = views + 1 WHERE id = 1")
+    
     cursor.execute("SELECT user_id FROM users WHERE user_id = ?", (user_id,))
     if not cursor.fetchone():
-        referred_by = int(args[0]) if args and args[0].isdigit() else None
-        if referred_by: cursor.execute("UPDATE users SET points = points + 1 WHERE user_id = ?", (referred_by,))
-        cursor.execute("INSERT INTO users (user_id, username, referred_by) VALUES (?, ?, ?)", (user_id, update.message.from_user.username, referred_by))
-        conn.commit()
+        cursor.execute("INSERT INTO users (user_id, username) VALUES (?, ?)", (user_id, update.message.from_user.username))
+    conn.commit()
     conn.close()
     await update.message.reply_text("🎉 أهلاً بك! أرسل رابط تيك توك للتحميل 🚀")
 
-async def share(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.message.from_user.id
-    bot_username = (await context.bot.get_me()).username
+async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message.from_user.id != ADMIN_ID: return
     conn = sqlite3.connect('bot_data.db')
-    result = conn.cursor().execute("SELECT points FROM users WHERE user_id = ?", (user_id,)).fetchone()
-    points = result[0] if result else 0
+    count = conn.cursor().execute("SELECT count(*) FROM users").fetchone()[0]
+    views = conn.cursor().execute("SELECT views FROM stats WHERE id = 1").fetchone()[0]
     conn.close()
-    await update.message.reply_text(f"👥 رابطك: https://t.me/{bot_username}?start={user_id}\n📊 نقاطك: {points}")
+    
+    msg = f"🔹 لوحة تحكم الأدمن:\n👥 عدد المشتركين: {count}\n👀 إجمالي المشاهدات: {views}"
+    await update.message.reply_text(msg, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("📢 إرسال إذاعة", callback_data="admin_bc")]]))
 
 async def test_trends(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message.from_user.id != ADMIN_ID: return
     await update.message.reply_text("⏳ جاري فحص الترند...")
     trends = await fetch_trends()
-    if not trends: await update.message.reply_text("❌ لم يتم جلب أي روابط، راجع السجلات.")
+    if not trends: await update.message.reply_text("❌ لم يتم جلب أي روابط.")
     else: await update.message.reply_text("✅ تم جلب الروابط:\n" + "\n".join(trends))
 
+# (باقي الدوال handle_message, button_click كما هي)
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
     if update.message.from_user.id == ADMIN_ID and context.user_data.get('waiting_for_bc'):
@@ -95,7 +100,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("✅ تمت الإذاعة.")
         return
     if not re.search(r'tiktok\.com', text):
-        await update.message.reply_text("❌ عذراً، أرسل رابط تيك توك صحيحاً.")
+        await update.message.reply_text("❌ أرسل رابط تيك توك.")
         return
     context.user_data['last_tiktok_url'] = text
     keyboard = [[InlineKeyboardButton("🎬 تحميل فيديو HD", callback_data="vid")], [InlineKeyboardButton("🎵 تحميل صوت MP3", callback_data="aud")]]
@@ -123,10 +128,8 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def main():
     app = Application.builder().token(TOKEN).post_init(post_init).build()
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("share", share))
     app.add_handler(CommandHandler("test_trends", test_trends))
-    # النص المباشر الجديد بدون رسم بياني
-    app.add_handler(CommandHandler("admin", lambda u, c: u.message.reply_text("🔹 لوحة تحكم الأدمن:", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("📢 إرسال إذاعة", callback_data="admin_bc")]]))))
+    app.add_handler(CommandHandler("admin", admin_panel))
     app.add_handler(CallbackQueryHandler(button_click))
     app.add_handler(MessageHandler(filters.TEXT & filters.ChatType.PRIVATE, handle_message))
     app.run_polling()
