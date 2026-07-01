@@ -24,25 +24,36 @@ def init_db():
 
 init_db()
 
-# --- 2. ميزة الترند التلقائي (محدثة للتعامل مع أخطاء الـ API) ---
+# --- 2. ميزة الترند التلقائي (محدثة لمنع الأخطاء نهائياً) ---
 async def send_trends_auto_manual(app):
     logging.info("--- بدء فحص الترند التلقائي ---")
     try:
         response = requests.get("https://www.tikwm.com/api/feed/list?region=SA&count=1", timeout=10).json()
         
-        # معالجة الاستجابة سواء كانت قاموساً أو قائمة
+        # تصحيح جذري: التعامل مع أي هيكل بيانات يرسله الـ API بأمان
         videos = []
         if isinstance(response, dict):
+            # إذا كان الـ API يرسل قاموساً
             videos = response.get('data', {}).get('videos', [])
         elif isinstance(response, list):
+            # إذا كان الـ API يرسل قائمة مباشرة
             videos = response
             
         if not videos: 
             logging.warning("لا توجد فيديوهات في الاستجابة")
             return
         
-        video_file = videos[0].get("play")
+        # التأكد من أن العنصر الأول هو قاموس قبل طلب 'play'
+        first_video = videos[0]
+        if isinstance(first_video, dict):
+            video_file = first_video.get("play")
+        else:
+            logging.error("هيكل بيانات الفيديو غير متوقع")
+            return
         
+        if not video_file:
+            return
+
         # جلب قائمة المستخدمين
         conn = sqlite3.connect('bot_data.db')
         users = conn.cursor().execute("SELECT user_id FROM users").fetchall()
