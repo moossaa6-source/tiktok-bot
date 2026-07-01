@@ -24,41 +24,40 @@ def init_db():
 
 init_db()
 
-# --- 2. ميزة الترند التلقائي (تعديل جذري وشامل لضمان الاستقرار) ---
+# --- 2. ميزة الترند التلقائي (محدثة لتجاوز الصور والبحث عن فيديوهات) ---
 async def send_trends_auto_manual(app):
     logging.info("--- بدء فحص الترند التلقائي ---")
     try:
-        response_raw = requests.get("https://www.tikwm.com/api/feed/list?region=SA&count=1", timeout=15)
+        # زيادة العدد للبحث عن فيديو حقيقي
+        response_raw = requests.get("https://www.tikwm.com/api/feed/list?region=SA&count=5", timeout=15)
         res = response_raw.json()
 
-        # استخراج قائمة الفيديوهات بغض النظر عن هيكل الـ API
         videos = []
         if isinstance(res, dict):
             data = res.get('data', {})
-            videos = data.get('videos', []) if isinstance(data, dict) else []
+            if isinstance(data, dict):
+                videos = data.get('videos', [])
         elif isinstance(res, list):
             for item in res:
                 if isinstance(item, dict) and 'videos' in item:
                     videos = item.get('videos', [])
                     break
         
-      # استبدل سطر logging.warning("لم يتم العثور على فيديوهات في الاستجابة") بـ:
-        if not videos or not isinstance(videos, list) or len(videos) == 0:
-            logging.warning(f"لم يتم العثور على فيديوهات. الاستجابة كانت: {res}")
-            return
-        
-        first_video = videos[0]
-        video_file = first_video.get("play") if isinstance(first_video, dict) else None
+        # البحث عن أول عنصر مدته أكبر من 0 (فيديو حقيقي)
+        video_file = None
+        for v in videos:
+            if isinstance(v, dict) and v.get("duration", 0) > 0:
+                video_file = v.get("play")
+                break
         
         if not video_file:
+            logging.warning("لم يتم العثور على فيديوهات حقيقية (النتائج الحالية صور)")
             return
 
-        # جلب قائمة المستخدمين
         conn = sqlite3.connect('bot_data.db')
         users = conn.cursor().execute("SELECT user_id FROM users").fetchall()
         conn.close()
         
-        # إرسال الفيديو للمستخدمين
         for user in users:
             try:
                 await app.bot.send_video(
@@ -74,18 +73,16 @@ async def send_trends_auto_manual(app):
 
 async def trend_loop(app):
     while True:
-        await asyncio.sleep(60) # فاصل زمني: 60 ثانية
+        await asyncio.sleep(60)
         await send_trends_auto_manual(app)
 
-# --- 3. أوامر المستخدمين (Start, Share) ---
+# --- 3. أوامر المستخدمين ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     username = update.message.from_user.username
-    
     conn = sqlite3.connect('bot_data.db')
     cursor = conn.cursor()
     cursor.execute("UPDATE stats SET views = views + 1 WHERE id = 1")
-    
     cursor.execute("SELECT user_id FROM users WHERE user_id = ?", (user_id,))
     if not cursor.fetchone():
         args = context.args
@@ -101,16 +98,14 @@ async def share(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     bot_me = await context.bot.get_me()
     bot_username = bot_me.username
-    
     conn = sqlite3.connect('bot_data.db')
     result = conn.cursor().execute("SELECT points FROM users WHERE user_id = ?", (user_id,)).fetchone()
     points = result[0] if result else 0
     conn.close()
-    
     link = f"https://t.me/{bot_username}?start={user_id}"
     await update.message.reply_text(f"👥 رابط الدعوة الخاص بك:\n{link}\n\n📊 نقاطك الحالية: {points}")
 
-# --- 4. أوامر لوحة التحكم (Admin Panel) ---
+# --- 4. لوحة تحكم الأدمن ---
 async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message.from_user.id != ADMIN_ID: return
     conn = sqlite3.connect('bot_data.db')
@@ -118,9 +113,9 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     views = conn.cursor().execute("SELECT views FROM stats WHERE id = 1").fetchone()[0]
     conn.close()
     keyboard = [[InlineKeyboardButton("📢 إذاعة رسالة للجميع", callback_data="admin_bc")]]
-    await update.message.reply_text(f"🔹 **لوحة التحكم الخاصة بالمدير:**\n\n👥 عدد المشتركين: {count}\n👀 إجمالي المشاهدات: {views}", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+    await update.message.reply_text(f"🔹 **لوحة التحكم:**\n👥 المشتركين: {count}\n👀 المشاهدات: {views}", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
 
-# --- 5. معالجة الرسائل النصية ---
+# --- 5. معالجة الرسائل ---
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
     user_id = update.message.from_user.id
@@ -132,37 +127,37 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for user in users:
             try: await context.bot.send_message(chat_id=user[0], text=text)
             except Exception: pass
-        await update.message.reply_text("✅ تمت الإذاعة بنجاح.")
+        await update.message.reply_text("✅ تمت الإذاعة.")
         return
     if 'tiktok.com' not in text:
-        await update.message.reply_text("❌ عذراً، الرجاء إرسال رابط تيك توك صحيح.")
+        await update.message.reply_text("❌ رابط غير صحيح.")
         return
     context.user_data['last_url'] = text
-    keyboard = [[InlineKeyboardButton("🎬 تحميل فيديو (بدون علامة)", callback_data="vid")], [InlineKeyboardButton("🎵 تحميل كملف صوتي (MP3)", callback_data="aud")]]
-    await update.message.reply_text("📥 اختر الصيغة التي تريد التحميل بها:", reply_markup=InlineKeyboardMarkup(keyboard))
+    keyboard = [[InlineKeyboardButton("🎬 تحميل فيديو", callback_data="vid")], [InlineKeyboardButton("🎵 تحميل صوت", callback_data="aud")]]
+    await update.message.reply_text("📥 اختر الصيغة:", reply_markup=InlineKeyboardMarkup(keyboard))
 
-# --- 6. معالجة الأزرار ---
+# --- 6. الأزرار ---
 async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     if query.data == "admin_bc":
         context.user_data['waiting_for_bc'] = True
-        await query.message.reply_text("📥 أرسل النص الذي تريد إذاعته الآن:")
+        await query.message.reply_text("📥 أرسل النص:")
         return
     url = context.user_data.get('last_url')
-    if not url: return await query.edit_message_text("❌ انتهت صلاحية الجلسة.")
-    await query.edit_message_text("⏳ جاري جلب البيانات...")
+    if not url: return await query.edit_message_text("❌ انتهت الجلسة.")
+    await query.edit_message_text("⏳ جاري المعالجة...")
     try:
         data = requests.post("https://www.tikwm.com/api/", data={"url": url, "hd": 1}, timeout=15).json().get("data", {})
         if query.data == "vid":
-            await query.message.reply_video(video=data.get("hdplay") or data.get("play"), caption=f"📌 تمت الاستضافة بواسطة {CHANNEL_USERNAME}")
+            await query.message.reply_video(video=data.get("hdplay") or data.get("play"), caption=f"📌 {CHANNEL_USERNAME}")
         elif query.data == "aud":
-            await query.message.reply_audio(audio=data.get("music"), caption=f"🎵 {data.get('title', 'الصوت')}\n📌 {CHANNEL_USERNAME}")
+            await query.message.reply_audio(audio=data.get("music"), caption=f"🎵 {data.get('title')}")
         await query.message.delete()
     except Exception:
-        await query.edit_message_text("❌ حدث خطأ، تأكد من الرابط.")
+        await query.edit_message_text("❌ حدث خطأ.")
 
-# --- 7. التشغيل الآمن ---
+# --- 7. التشغيل ---
 def main():
     app = Application.builder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
@@ -176,7 +171,6 @@ def main():
             asyncio.create_task(trend_loop(app))
             await app.start()
             await app.updater.start_polling(drop_pending_updates=True)
-            print("🚀 البوت يعمل الآن بكامل الميزات وبشكل مستقر...")
             await asyncio.Event().wait()
     asyncio.run(run_bot())
 
