@@ -116,14 +116,17 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.message.reply_audio(audio=data.get("music"))
         await query.message.delete()
     except Exception as e: await query.edit_message_text(f"❌ خطأ: {str(e)}")
-
 def main():
+    # إنشاء التطبيق مع تفعيل الـ JobQueue
     app = Application.builder().token(TOKEN).build()
     
-    # ضبط المجدول على دقيقة واحدة للتجربة (interval=60)
+    # هذه هي الطريقة الصحيحة في الإصدارات الحديثة
     job_queue = app.job_queue
+    
+    # إضافة المجدول
     job_queue.run_repeating(send_trends_auto, interval=60, first=10)
     
+    # إضافة الهاندلرز
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("share", share))
     app.add_handler(CommandHandler("admin", admin_panel))
