@@ -24,39 +24,35 @@ def init_db():
 
 init_db()
 
-# --- 2. ميزة الترند التلقائي (محدثة للإرسال للقناة فقط وبمحتوى عربي) ---
+# --- 2. ميزة الترند التلقائي (محدثة لفلترة المحتوى العربي وللإرسال للقناة فقط) ---
 async def send_trends_auto_manual(app):
-    logging.info("--- بدء فحص الترند العربي التلقائي للقناة ---")
+    logging.info("--- بدء فحص الترند التلقائي للقناة ---")
     try:
-        # تحديد المنطقة SA لجلب الترند السعودي/العربي
-        response_raw = requests.get("https://www.tikwm.com/api/feed/list?region=SA&count=30", timeout=20)
-        res = response_raw.json()
+        # جلب الترند السعودي
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        response = requests.get("https://tikwm.com/api/feed/list?region=SA&count=30", headers=headers, timeout=20)
+        res = response.json()
 
         videos = []
-        
-        # الحل الجذري لمشكلة تغير هيكل الـ API
         if isinstance(res, dict):
             data = res.get('data')
             if isinstance(data, dict):
                 videos = data.get('videos', [])
             elif isinstance(data, list):
-                videos = data # أحياناً يرسل الموقع الفيديوهات كقائمة مباشرة داخل data
+                videos = data
         elif isinstance(res, list):
             videos = res
 
-        # البحث عن أي نتيجة فيها رابط 'play'
         video_file = None
-        if isinstance(videos, list):
-            for v in videos:
-                if isinstance(v, dict) and v.get("play"):
-                    video_file = v.get("play")
-                    break
+        for v in videos:
+            if isinstance(v, dict) and v.get("play"):
+                video_file = v.get("play")
+                break
         
         if not video_file:
             logging.warning("لم يتم العثور على فيديوهات بعد فحص 30 نتيجة")
             return
 
-        # الإرسال للقناة مباشرة بدلاً من المستخدمين
         try:
             await app.bot.send_video(
                 chat_id=CHANNEL_USERNAME, 
@@ -66,15 +62,13 @@ async def send_trends_auto_manual(app):
             logging.info(f"تم إرسال الفيديو بنجاح للقناة: {CHANNEL_USERNAME}")
         except Exception as e:
             logging.error(f"خطأ في إرسال الفيديو للقناة: {e}")
-
     except Exception as e:
         logging.error(f"خطأ في الترند: {e}")
 
 async def trend_loop(app):
     while True:
-        # الفحص كل ساعة (3600 ثانية)
-        await asyncio.sleep(3600)
         await send_trends_auto_manual(app)
+        await asyncio.sleep(3600) # فحص كل ساعة
 
 # --- 3. أوامر المستخدمين (Start, Share) ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -208,12 +202,12 @@ def main():
     async def run_bot():
         async with app:
             await app.initialize()
-            # تشغيل مهمة الترند التلقائي
+            # تشغيل مهمة الترند في الخلفية
             asyncio.create_task(trend_loop(app))
             await app.start()
             await app.updater.start_polling(drop_pending_updates=True)
             
-            print("🚀 البوت يعمل الآن بكامل الميزات وبشكل مستقر - الترند للقناة فقط")
+            print("🚀 البوت يعمل الآن بكامل الميزات وبشكل مستقر...")
             await asyncio.Event().wait()
 
     asyncio.run(run_bot())
