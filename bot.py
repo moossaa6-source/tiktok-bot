@@ -1,7 +1,6 @@
 import sqlite3
 import requests
 import os
-import yt_dlp
 import asyncio
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
@@ -22,14 +21,14 @@ def init_db():
 
 init_db()
 
-# --- ميزة الترند التلقائي ---
+# --- ميزة الترند التلقائي (المعدلة) ---
 def get_latest_trend_url():
     try:
-        ydl_opts = {'quiet': True, 'extract_flat': True}
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info("https://www.tiktok.com/tag/foryou", download=False)
-            return info['entries'][0]['url']
-    except: return None
+        # استخدام API الخاص بـ tikwm لجلب الفيديوهات الشائعة مباشرة
+        response = requests.get("https://www.tikwm.com/api/feed/list?region=SA&count=1", timeout=10).json()
+        return response['data']['videos'][0]['share_url']
+    except: 
+        return None
 
 async def send_trends_auto(context: ContextTypes.DEFAULT_TYPE):
     trend_url = get_latest_trend_url()
@@ -67,8 +66,7 @@ async def share(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     bot_username = (await context.bot.get_me()).username
     conn = sqlite3.connect('bot_data.db')
-    result = conn.cursor().execute("SELECT points FROM users WHERE user_id = ?", (user_id,)).fetchone()
-    points = result[0] if result else 0
+    points = conn.cursor().execute("SELECT points FROM users WHERE user_id = ?", (user_id,)).fetchone()[0]
     conn.close()
     await update.message.reply_text(f"👥 رابطك: https://t.me/{bot_username}?start={user_id}\n📊 نقاطك: {points}")
 
@@ -116,17 +114,14 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.message.reply_audio(audio=data.get("music"))
         await query.message.delete()
     except Exception as e: await query.edit_message_text(f"❌ خطأ: {str(e)}")
+
 def main():
-    # إنشاء التطبيق مع تفعيل الـ JobQueue
     app = Application.builder().token(TOKEN).build()
     
-    # هذه هي الطريقة الصحيحة في الإصدارات الحديثة
+    # ضبط المجدول (دقيقة واحدة للتجربة)
     job_queue = app.job_queue
-    
-    # إضافة المجدول
     job_queue.run_repeating(send_trends_auto, interval=60, first=10)
     
-    # إضافة الهاندلرز
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("share", share))
     app.add_handler(CommandHandler("admin", admin_panel))
