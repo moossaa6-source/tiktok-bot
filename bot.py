@@ -116,19 +116,27 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e: await query.edit_message_text(f"❌ خطأ: {str(e)}")
 
 def main():
+    # إنشاء التطبيق باستخدام ApplicationBuilder مع تفعيل الـ JobQueue
     app = Application.builder().token(TOKEN).build()
     
-    # ضبط المجدول (دقيقة واحدة للتجربة)
-    job_queue = app.job_queue
-    job_queue.run_repeating(send_trends_auto, interval=60, first=10)
+    # التأكد من وجود JobQueue، إذا لم يوجد، ننشئه يدوياً
+    if app.job_queue is None:
+        from telegram.ext import JobQueue
+        app.job_queue = JobQueue()
+        app.job_queue.set_application(app)
+        app.job_queue.start()
+
+    # إضافة المجدول
+    app.job_queue.run_repeating(send_trends_auto, interval=60, first=10)
     
+    # إضافة الهاندلرز
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("share", share))
     app.add_handler(CommandHandler("admin", admin_panel))
     app.add_handler(CallbackQueryHandler(button_click))
     app.add_handler(MessageHandler(filters.TEXT & filters.ChatType.PRIVATE, handle_message))
     
-    print("البوت يعمل الآن (الترند كل دقيقة)...")
+    print("البوت يعمل الآن...")
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
