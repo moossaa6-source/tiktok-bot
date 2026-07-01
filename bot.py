@@ -42,8 +42,9 @@ async def send_trends_auto_manual(app):
                     videos = item.get('videos', [])
                     break
         
+      # استبدل سطر logging.warning("لم يتم العثور على فيديوهات في الاستجابة") بـ:
         if not videos or not isinstance(videos, list) or len(videos) == 0:
-            logging.warning("لم يتم العثور على فيديوهات في الاستجابة")
+            logging.warning(f"لم يتم العثور على فيديوهات. الاستجابة كانت: {res}")
             return
         
         first_video = videos[0]
