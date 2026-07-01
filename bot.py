@@ -5,8 +5,10 @@ import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 
-# إعداد سجلات النظام لتتبع الأخطاء بدقة
-logging.basicConfig(level=logging.INFO)
+# --- إعداد السجلات (Logs) ---
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+# هذا السطر هو الحل الجذري لإخفاء رسائل 200 OK المزعجة التي تظهر في صورتك
+logging.getLogger("httpx").setLevel(logging.WARNING) 
 
 TOKEN = "8895284125:AAEKiyC1Jlj-6vBpyz0-PLylDudh6S3o1w4"
 CHANNEL_USERNAME = '@MyDesign_Channels'
@@ -24,21 +26,23 @@ def init_db():
 
 init_db()
 
-# --- 2. ميزة الترند التلقائي (تعمل في الخلفية بأمان) ---
-def get_latest_trend_url():
-    try:
-        response = requests.get("https://www.tikwm.com/api/feed/list?region=SA&count=1", timeout=10).json()
-        return response['data']['videos'][0]['share_url']
-    except Exception as e:
-        logging.error(f"Error fetching trend URL: {e}")
-        return None
-
+# --- 2. ميزة الترند التلقائي (المحدثة والمستقرة) ---
 async def send_trends_auto_manual(app):
-    trend_url = get_latest_trend_url()
-    if not trend_url: return
     try:
-        data = requests.post("https://www.tikwm.com/api/", data={"url": trend_url, "hd": 1}, timeout=15).json().get("data", {})
-        video_file = data.get("hdplay") or data.get("play")
+        # جلب قائمة الفيديوهات الشائعة مباشرة
+        response = requests.get("https://www.tikwm.com/api/feed/list?region=SA&count=1", timeout=10).json()
+        videos = response.get('data', {}).get('videos', [])
+        
+        if not videos:
+            logging.error("لم يتم العثور على فيديوهات ترند من المصدر.")
+            return
+            
+        # استخراج رابط الفيديو المباشر من الرد الأول
+        video_file = videos[0].get("play")
+        title = videos[0].get("title", "🔥 فيديو ترند جديد!")
+        
+        if not video_file:
+            return
         
         conn = sqlite3.connect('bot_data.db')
         users = conn.cursor().execute("SELECT user_id FROM users").fetchall()
@@ -46,16 +50,18 @@ async def send_trends_auto_manual(app):
         
         for user in users:
             try: 
-                await app.bot.send_video(chat_id=user[0], video=video_file, caption="🔥 فيديو ترند جديد!")
-                await asyncio.sleep(1.5) # تأخير بسيط لتجنب حظر تليجرام بسبب الإرسال الجماعي
-            except Exception:
-                pass
+                await app.bot.send_video(chat_id=user[0], video=video_file, caption=f"{title}\n\n📌 {CHANNEL_USERNAME}")
+                await asyncio.sleep(1.5) # تفادي حظر تليجرام للإرسال السريع
+            except Exception as e:
+                pass # تجاهل المستخدمين الذين قاموا بحظر البوت
+                
     except Exception as e:
-        logging.error(f"Error in trend auto manual: {e}")
+        logging.error(f"خطأ في ميزة الترند: {e}")
 
 async def trend_loop(app):
+    # حلقة لا نهائية تعمل بأمان في الخلفية
     while True:
-        await asyncio.sleep(60) # فاصل زمني: 60 ثانية (دقيقة واحدة) للتجربة
+        await asyncio.sleep(60) # انتظر دقيقة واحدة بين كل فحص (للتجربة)
         await send_trends_auto_manual(app)
 
 # --- 3. أوامر المستخدمين (Start, Share) ---
@@ -69,7 +75,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     cursor.execute("SELECT user_id FROM users WHERE user_id = ?", (user_id,))
     if not cursor.fetchone():
-        # معالجة نظام الإحالة (دعوة الأصدقاء)
+        # نظام الإحالة (دعوة الأصدقاء)
         args = context.args
         referred_by = int(args[0]) if args and args[0].isdigit() else None
         
@@ -130,7 +136,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             try: 
                 await context.bot.send_message(chat_id=user[0], text=text)
                 success_count += 1
-                await asyncio.sleep(0.05) # منع حظر السبام
+                await asyncio.sleep(0.05) # تأخير آمن لمنع حظر السبام
             except Exception:
                 pass
         await update.message.reply_text(f"✅ تمت الإذاعة بنجاح لـ {success_count} مستخدم.")
@@ -181,7 +187,7 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.message.delete()
     except Exception as e:
         logging.error(f"Download Error: {e}")
-        await query.edit_message_text("❌ حدث خطأ أثناء جلب الفيديو، تأكد من أن الرابط صحيح أو أن الفيديو ليس خاصاً.")
+        await query.edit_message_text("❌ حدث خطأ أثناء جلب الفيديو. تأكد من أن الرابط صحيح أو أن الفيديو ليس خاصاً.")
 
 # --- 7. التشغيل الآمن ---
 async def post_init(application: Application):
@@ -202,7 +208,6 @@ def main():
     app.add_handler(MessageHandler(filters.TEXT & filters.ChatType.PRIVATE, handle_message))
     
     print("🚀 البوت يعمل الآن بكامل الميزات وبشكل مستقر...")
-    # تشغيل البوت مع تنظيف أي جلسات سابقة
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
