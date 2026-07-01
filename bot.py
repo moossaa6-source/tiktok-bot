@@ -2,7 +2,6 @@ import sqlite3
 import requests
 import asyncio
 import logging
-import re
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 
@@ -13,9 +12,19 @@ TOKEN = "8895284125:AAEKiyC1Jlj-6vBpyz0-PLylDudh6S3o1w4"
 CHANNEL_USERNAME = '@MyDesign_Channels'
 ADMIN_ID = 8192715650
 
+# --- 1. إعداد قاعدة البيانات ---
+def init_db():
+    conn = sqlite3.connect('bot_data.db')
+    cursor = conn.cursor()
+    cursor.execute('''CREATE TABLE IF NOT EXISTS users (user_id INTEGER PRIMARY KEY, username TEXT, referred_by INTEGER, points INTEGER DEFAULT 0)''')
+    cursor.execute('''CREATE TABLE IF NOT EXISTS stats (id INTEGER PRIMARY KEY, views INTEGER DEFAULT 0)''')
+    cursor.execute("INSERT OR IGNORE INTO stats (id, views) VALUES (1, 0)")
+    conn.commit()
+    conn.close()
 
+init_db()
 
-# --- 3. أوامر المستخدمين (Start, Share) ---
+# --- 2. أوامر المستخدمين (Start, Share) ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     username = update.message.from_user.username
@@ -50,7 +59,7 @@ async def share(update: Update, context: ContextTypes.DEFAULT_TYPE):
     link = f"https://t.me/{bot_username}?start={user_id}"
     await update.message.reply_text(f"👥 رابط الدعوة الخاص بك:\n{link}\n\n📊 نقاطك الحالية: {points}")
 
-# --- 4. أوامر لوحة التحكم (Admin Panel) ---
+# --- 3. أوامر لوحة التحكم (Admin Panel) ---
 async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message.from_user.id != ADMIN_ID: 
         return
@@ -69,7 +78,7 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode='Markdown'
     )
 
-# --- 5. معالجة الرسائل النصية (الروابط والإذاعة) ---
+# --- 4. معالجة الرسائل النصية (الروابط والإذاعة) ---
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
     user_id = update.message.from_user.id
@@ -102,7 +111,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
     await update.message.reply_text("📥 اختر الصيغة التي تريد التحميل بها:", reply_markup=InlineKeyboardMarkup(keyboard))
 
-# --- 6. معالجة الأزرار (Callbacks) ---
+# --- 5. معالجة الأزرار (Callbacks) ---
 async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -134,7 +143,7 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logging.error(f"Download Error: {e}")
         await query.edit_message_text("❌ حدث خطأ أثناء جلب الفيديو، تأكد من أن الرابط صحيح أو أن الفيديو ليس خاصاً.")
 
-# --- 7. التشغيل الآمن ---
+# --- 6. التشغيل الآمن ---
 def main():
     app = Application.builder().token(TOKEN).build()
     
@@ -147,8 +156,6 @@ def main():
     async def run_bot():
         async with app:
             await app.initialize()
-            # تشغيل مهمة الترند في الخلفية
-            asyncio.create_task(trend_loop(app))
             await app.start()
             await app.updater.start_polling(drop_pending_updates=True)
             
