@@ -28,22 +28,16 @@ init_db()
 async def send_trends_auto_manual(app):
     logging.info("--- بدء فحص الترند التلقائي ---")
     try:
-        # زيادة count إلى 20 لضمان وجود فيديو وسط الصور
-        response_raw = requests.get("https://www.tikwm.com/api/feed/list?region=SA&count=20", timeout=15)
+        # رفع العدد لـ 30 لضمان وجود فيديو وسط الصور الكثيرة
+        response_raw = requests.get("https://www.tikwm.com/api/feed/list?region=SA&count=30", timeout=20)
         res = response_raw.json()
 
         videos = []
+        # محاولة الوصول للبيانات بأكثر من طريقة لضمان استخراجها
         if isinstance(res, dict):
-            data = res.get('data', {})
-            if isinstance(data, dict):
-                videos = data.get('videos', [])
-        elif isinstance(res, list):
-            for item in res:
-                if isinstance(item, dict) and 'videos' in item:
-                    videos = item.get('videos', [])
-                    break
+            videos = res.get('data', {}).get('videos', [])
         
-        # البحث عن أي نتيجة فيها رابط 'play'
+        # البحث عن أي نتيجة فيها رابط 'play' مهما كان نوع المحتوى
         video_file = None
         for v in videos:
             if isinstance(v, dict) and v.get("play"):
@@ -51,7 +45,7 @@ async def send_trends_auto_manual(app):
                 break
         
         if not video_file:
-            logging.warning("لم يتم العثور على أي رابط فيديو في النتائج الحالية")
+            logging.warning("لم يتم العثور على فيديوهات بعد فحص 30 نتيجة")
             return
 
         conn = sqlite3.connect('bot_data.db')
