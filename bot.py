@@ -5,7 +5,7 @@ import asyncio
 import yt_dlp
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
- 
+
 # التوكن الجديد
 TOKEN = "8895284125:AAEKiyC1Jlj-6vBpyz0-PLylDudh6S3o1w4"
 CHANNEL_USERNAME = '@MyDesign_Channels'
@@ -22,34 +22,7 @@ def init_db():
 
 init_db()
 
-def get_latest_trend_url():
-    try:
-        ydl_opts = {'quiet': True, 'extract_flat': True}
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info("https://www.tiktok.com/tag/foryou", download=False)
-            return info['entries'][0]['url']
-    except: return None
-
-async def send_trends_auto(context: ContextTypes.DEFAULT_TYPE):
-    trend_url = get_latest_trend_url()
-    if not trend_url: return
-    try:
-        data = requests.post("https://www.tikwm.com/api/", data={"url": trend_url, "hd": 1}, timeout=15).json().get("data", {})
-        video_file = data.get("hdplay") or data.get("play")
-        conn = sqlite3.connect('bot_data.db')
-        users = conn.cursor().execute("SELECT user_id FROM users").fetchall()
-        conn.close()
-        for user in users:
-            try: 
-                await context.bot.send_video(chat_id=user[0], video=video_file, caption="🔥 فيديو ترند جديد!")
-                await asyncio.sleep(1)
-            except: pass
-    except: pass
-
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not context.job_queue.get_jobs_by_name('trend_job'):
-        context.job_queue.run_repeating(send_trends_auto, interval=1800, first=10, name='trend_job')
-    
     user_id = update.message.from_user.id
     args = context.args
     conn = sqlite3.connect('bot_data.db')
@@ -119,24 +92,14 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except: await query.edit_message_text("❌ فشل التحميل.")
 
 def main():
-    # استخدام Webhook لمنع التعارض (Conflict)
-    url = os.environ.get("RAILWAY_PUBLIC_DOMAIN")
     app = Application.builder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("share", share))
     app.add_handler(CommandHandler("admin", admin_panel))
     app.add_handler(CallbackQueryHandler(button_click))
     app.add_handler(MessageHandler(filters.TEXT & filters.ChatType.PRIVATE, handle_message))
-    
-    if url:
-        app.run_webhook(
-            listen="0.0.0.0",
-            port=int(os.environ.get("PORT", 8080)),
-            url_path=TOKEN,
-            webhook_url=f"https://{url}/{TOKEN}"
-        )
-    else:
-        app.run_polling(drop_pending_updates=True)
+    print("البوت يعمل الآن (بدون ترند)...")
+    app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
     main()
