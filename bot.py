@@ -119,18 +119,18 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.message.delete()
     except Exception as e: await query.edit_message_text(f"❌ خطأ: {str(e)}")
 
+# --- الإطلاق الآمن ---
+async def post_init(application: Application):
+    application.create_task(trend_loop(application))
+
 def main():
-    app = Application.builder().token(TOKEN).build()
+    app = Application.builder().token(TOKEN).post_init(post_init).build()
     
-    # إضافة الهاندلرز
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("share", share))
     app.add_handler(CommandHandler("admin", admin_panel))
     app.add_handler(CallbackQueryHandler(button_click))
     app.add_handler(MessageHandler(filters.TEXT & filters.ChatType.PRIVATE, handle_message))
-    
-    # تشغيل حلقة الترند في الخلفية
-    app.create_task(trend_loop(app))
     
     print("البوت يعمل الآن بكامل الميزات...")
     app.run_polling(drop_pending_updates=True)
