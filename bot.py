@@ -2,6 +2,7 @@ import sqlite3
 import requests
 import asyncio
 import logging
+import re  # تمت الإضافة لفحص النصوص العربية
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 
@@ -28,7 +29,7 @@ init_db()
 async def send_trends_auto_manual(app):
     logging.info("--- بدء فحص الترند التلقائي للقناة ---")
     try:
-        # جلب الترند السعودي
+        # جلب الترند السعودي مع زيادة العدد لـ 30 لضمان وجود محتوى عربي
         headers = {'User-Agent': 'Mozilla/5.0'}
         response = requests.get("https://tikwm.com/api/feed/list?region=SA&count=30", headers=headers, timeout=20)
         res = response.json()
@@ -46,18 +47,22 @@ async def send_trends_auto_manual(app):
         video_file = None
         for v in videos:
             if isinstance(v, dict) and v.get("play"):
-                video_file = v.get("play")
-                break
+                title = v.get("title", "")
+                # فحص ما إذا كان العنوان يحتوي على حروف عربية (لضمان محتوى خليجي/عربي)
+                if bool(re.search(r'[\u0600-\u06FF]', title)):
+                    video_file = v.get("play")
+                    break
         
         if not video_file:
-            logging.warning("لم يتم العثور على فيديوهات بعد فحص 30 نتيجة")
+            logging.warning("لم يتم العثور على فيديوهات عربية في هذه الدفعة، سيتم المحاولة لاحقاً")
             return
 
         try:
+            # تم إزالة عبارة "السعودية" من النص كما طلبت
             await app.bot.send_video(
                 chat_id=CHANNEL_USERNAME, 
                 video=video_file, 
-                caption=f"🔥 فيديو ترند جديد (السعودية)!\n📌 {CHANNEL_USERNAME}"
+                caption=f"🔥 فيديو ترند جديد!\n📌 {CHANNEL_USERNAME}"
             )
             logging.info(f"تم إرسال الفيديو بنجاح للقناة: {CHANNEL_USERNAME}")
         except Exception as e:
