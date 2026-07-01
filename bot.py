@@ -13,79 +13,7 @@ TOKEN = "8895284125:AAEKiyC1Jlj-6vBpyz0-PLylDudh6S3o1w4"
 CHANNEL_USERNAME = '@MyDesign_Channels'
 ADMIN_ID = 8192715650
 
-# ذاكرة لتخزين الفيديوهات التي تم إرسالها حتى لا يكررها البوت
-sent_videos = set()
 
-# --- 1. إعداد قاعدة البيانات ---
-def init_db():
-    conn = sqlite3.connect('bot_data.db')
-    cursor = conn.cursor()
-    cursor.execute('''CREATE TABLE IF NOT EXISTS users (user_id INTEGER PRIMARY KEY, username TEXT, referred_by INTEGER, points INTEGER DEFAULT 0)''')
-    cursor.execute('''CREATE TABLE IF NOT EXISTS stats (id INTEGER PRIMARY KEY, views INTEGER DEFAULT 0)''')
-    cursor.execute("INSERT OR IGNORE INTO stats (id, views) VALUES (1, 0)")
-    conn.commit()
-    conn.close()
-
-init_db()
-
-# --- 2. ميزة الترند التلقائي (محدثة لعدم التكرار وكل دقيقة) ---
-async def send_trends_auto_manual(app):
-    logging.info("--- بدء فحص الترند التلقائي للقناة ---")
-    try:
-        headers = {'User-Agent': 'Mozilla/5.0'}
-        response = requests.get("https://tikwm.com/api/feed/list?region=SA&count=30", headers=headers, timeout=20)
-        res = response.json()
-
-        videos = []
-        if isinstance(res, dict):
-            data = res.get('data')
-            if isinstance(data, dict):
-                videos = data.get('videos', [])
-            elif isinstance(data, list):
-                videos = data
-        elif isinstance(res, list):
-            videos = res
-
-        video_file = None
-        for v in videos:
-            if isinstance(v, dict) and v.get("play"):
-                title = v.get("title", "")
-                play_url = v.get("play")
-                
-                # التحقق من وجود حروف عربية + التأكد أن الفيديو لم يتم إرساله من قبل
-                if bool(re.search(r'[\u0600-\u06FF]', title)) and play_url not in sent_videos:
-                    video_file = play_url
-                    break
-        
-        if not video_file:
-            logging.warning("لم يتم العثور على فيديوهات جديدة أو عربية في هذه الدفعة.")
-            return
-
-        try:
-            await app.bot.send_video(
-                chat_id=CHANNEL_USERNAME, 
-                video=video_file, 
-                caption=f"🔥 فيديو ترند جديد!\n📌 {CHANNEL_USERNAME}"
-            )
-            logging.info(f"تم إرسال الفيديو بنجاح للقناة: {CHANNEL_USERNAME}")
-            
-            # حفظ رابط الفيديو في الذاكرة لكي لا نرسله مرة أخرى
-            sent_videos.add(video_file)
-            
-            # تفريغ الذاكرة إذا امتلأت (أكثر من 100 فيديو) لتجنب استهلاك مساحة السيرفر
-            if len(sent_videos) > 100:
-                sent_videos.clear()
-                
-        except Exception as e:
-            logging.error(f"خطأ في إرسال الفيديو للقناة: {e}")
-    except Exception as e:
-        logging.error(f"خطأ في الترند: {e}")
-
-async def trend_loop(app):
-    while True:
-        await send_trends_auto_manual(app)
-        # تم تغيير الوقت هنا إلى 60 ثانية (دقيقة واحدة) بدلاً من 3600 (ساعة)
-        await asyncio.sleep(60)
 
 # --- 3. أوامر المستخدمين (Start, Share) ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
