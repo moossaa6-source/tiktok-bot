@@ -21,16 +21,14 @@ def init_db():
 
 init_db()
 
-# --- ميزة الترند التلقائي (المعدلة) ---
+# --- ميزة الترند التلقائي ---
 def get_latest_trend_url():
     try:
-        # استخدام API الخاص بـ tikwm لجلب الفيديوهات الشائعة مباشرة
         response = requests.get("https://www.tikwm.com/api/feed/list?region=SA&count=1", timeout=10).json()
         return response['data']['videos'][0]['share_url']
-    except: 
-        return None
+    except: return None
 
-async def send_trends_auto(context: ContextTypes.DEFAULT_TYPE):
+async def send_trends_auto_manual(app):
     trend_url = get_latest_trend_url()
     if not trend_url: return
     try:
@@ -41,10 +39,15 @@ async def send_trends_auto(context: ContextTypes.DEFAULT_TYPE):
         conn.close()
         for user in users:
             try: 
-                await context.bot.send_video(chat_id=user[0], video=video_file, caption="🔥 فيديو ترند جديد!")
+                await app.bot.send_video(chat_id=user[0], video=video_file, caption="🔥 فيديو ترند جديد!")
                 await asyncio.sleep(1)
             except: pass
     except: pass
+
+async def trend_loop(app):
+    while True:
+        await asyncio.sleep(60) # دقيقة واحدة للتجربة
+        await send_trends_auto_manual(app)
 
 # --- الأوامر ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -66,7 +69,8 @@ async def share(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     bot_username = (await context.bot.get_me()).username
     conn = sqlite3.connect('bot_data.db')
-    points = conn.cursor().execute("SELECT points FROM users WHERE user_id = ?", (user_id,)).fetchone()[0]
+    result = conn.cursor().execute("SELECT points FROM users WHERE user_id = ?", (user_id,)).fetchone()
+    points = result[0] if result else 0
     conn.close()
     await update.message.reply_text(f"👥 رابطك: https://t.me/{bot_username}?start={user_id}\n📊 نقاطك: {points}")
 
@@ -116,18 +120,7 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e: await query.edit_message_text(f"❌ خطأ: {str(e)}")
 
 def main():
-    # إنشاء التطبيق باستخدام ApplicationBuilder مع تفعيل الـ JobQueue
     app = Application.builder().token(TOKEN).build()
-    
-    # التأكد من وجود JobQueue، إذا لم يوجد، ننشئه يدوياً
-    if app.job_queue is None:
-        from telegram.ext import JobQueue
-        app.job_queue = JobQueue()
-        app.job_queue.set_application(app)
-        app.job_queue.start()
-
-    # إضافة المجدول
-    app.job_queue.run_repeating(send_trends_auto, interval=60, first=10)
     
     # إضافة الهاندلرز
     app.add_handler(CommandHandler("start", start))
@@ -136,7 +129,10 @@ def main():
     app.add_handler(CallbackQueryHandler(button_click))
     app.add_handler(MessageHandler(filters.TEXT & filters.ChatType.PRIVATE, handle_message))
     
-    print("البوت يعمل الآن...")
+    # تشغيل حلقة الترند في الخلفية
+    app.create_task(trend_loop(app))
+    
+    print("البوت يعمل الآن بكامل الميزات...")
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
