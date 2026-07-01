@@ -2,7 +2,7 @@ import sqlite3
 import requests
 import asyncio
 import logging
-import re  # تمت الإضافة لفحص النصوص العربية
+import re
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 
@@ -12,6 +12,9 @@ logging.basicConfig(level=logging.INFO)
 TOKEN = "8895284125:AAEKiyC1Jlj-6vBpyz0-PLylDudh6S3o1w4"
 CHANNEL_USERNAME = '@MyDesign_Channels'
 ADMIN_ID = 8192715650
+
+# ذاكرة لتخزين الفيديوهات التي تم إرسالها حتى لا يكررها البوت
+sent_videos = set()
 
 # --- 1. إعداد قاعدة البيانات ---
 def init_db():
@@ -25,11 +28,10 @@ def init_db():
 
 init_db()
 
-# --- 2. ميزة الترند التلقائي (محدثة لفلترة المحتوى العربي وللإرسال للقناة فقط) ---
+# --- 2. ميزة الترند التلقائي (محدثة لعدم التكرار وكل دقيقة) ---
 async def send_trends_auto_manual(app):
     logging.info("--- بدء فحص الترند التلقائي للقناة ---")
     try:
-        # جلب الترند السعودي مع زيادة العدد لـ 30 لضمان وجود محتوى عربي
         headers = {'User-Agent': 'Mozilla/5.0'}
         response = requests.get("https://tikwm.com/api/feed/list?region=SA&count=30", headers=headers, timeout=20)
         res = response.json()
@@ -48,23 +50,32 @@ async def send_trends_auto_manual(app):
         for v in videos:
             if isinstance(v, dict) and v.get("play"):
                 title = v.get("title", "")
-                # فحص ما إذا كان العنوان يحتوي على حروف عربية (لضمان محتوى خليجي/عربي)
-                if bool(re.search(r'[\u0600-\u06FF]', title)):
-                    video_file = v.get("play")
+                play_url = v.get("play")
+                
+                # التحقق من وجود حروف عربية + التأكد أن الفيديو لم يتم إرساله من قبل
+                if bool(re.search(r'[\u0600-\u06FF]', title)) and play_url not in sent_videos:
+                    video_file = play_url
                     break
         
         if not video_file:
-            logging.warning("لم يتم العثور على فيديوهات عربية في هذه الدفعة، سيتم المحاولة لاحقاً")
+            logging.warning("لم يتم العثور على فيديوهات جديدة أو عربية في هذه الدفعة.")
             return
 
         try:
-            # تم إزالة عبارة "السعودية" من النص كما طلبت
             await app.bot.send_video(
                 chat_id=CHANNEL_USERNAME, 
                 video=video_file, 
                 caption=f"🔥 فيديو ترند جديد!\n📌 {CHANNEL_USERNAME}"
             )
             logging.info(f"تم إرسال الفيديو بنجاح للقناة: {CHANNEL_USERNAME}")
+            
+            # حفظ رابط الفيديو في الذاكرة لكي لا نرسله مرة أخرى
+            sent_videos.add(video_file)
+            
+            # تفريغ الذاكرة إذا امتلأت (أكثر من 100 فيديو) لتجنب استهلاك مساحة السيرفر
+            if len(sent_videos) > 100:
+                sent_videos.clear()
+                
         except Exception as e:
             logging.error(f"خطأ في إرسال الفيديو للقناة: {e}")
     except Exception as e:
@@ -73,7 +84,8 @@ async def send_trends_auto_manual(app):
 async def trend_loop(app):
     while True:
         await send_trends_auto_manual(app)
-        await asyncio.sleep(3600) # فحص كل ساعة
+        # تم تغيير الوقت هنا إلى 60 ثانية (دقيقة واحدة) بدلاً من 3600 (ساعة)
+        await asyncio.sleep(60)
 
 # --- 3. أوامر المستخدمين (Start, Share) ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
