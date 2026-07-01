@@ -47,7 +47,6 @@ async def send_trends_auto(context: ContextTypes.DEFAULT_TYPE):
     except: pass
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # تشغيل المجدول لمرة واحدة عند أول تشغيل
     if not context.job_queue.get_jobs_by_name('trend_job'):
         context.job_queue.run_repeating(send_trends_auto, interval=1800, first=10, name='trend_job')
     
@@ -120,14 +119,24 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except: await query.edit_message_text("❌ فشل التحميل.")
 
 def main():
+    # استخدام Webhook لمنع التعارض (Conflict)
+    url = os.environ.get("RAILWAY_PUBLIC_DOMAIN")
     app = Application.builder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("share", share))
     app.add_handler(CommandHandler("admin", admin_panel))
     app.add_handler(CallbackQueryHandler(button_click))
     app.add_handler(MessageHandler(filters.TEXT & filters.ChatType.PRIVATE, handle_message))
-    print("البوت يعمل الآن...")
-    app.run_polling(drop_pending_updates=True)
+    
+    if url:
+        app.run_webhook(
+            listen="0.0.0.0",
+            port=int(os.environ.get("PORT", 8080)),
+            url_path=TOKEN,
+            webhook_url=f"https://{url}/{TOKEN}"
+        )
+    else:
+        app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
     main()
