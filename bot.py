@@ -24,16 +24,23 @@ def init_db():
 
 init_db()
 
-# --- 2. ميزة الترند التلقائي (محدثة للسرعة والاستقرار) ---
+# --- 2. ميزة الترند التلقائي (محدثة للتعامل مع أخطاء الـ API) ---
 async def send_trends_auto_manual(app):
     logging.info("--- بدء فحص الترند التلقائي ---")
     try:
-        # جلب أحدث فيديو ترند
         response = requests.get("https://www.tikwm.com/api/feed/list?region=SA&count=1", timeout=10).json()
-        videos = response.get('data', {}).get('videos', [])
-        if not videos: return
         
-        # استخدام رابط الفيديو المباشر للتحميل
+        # معالجة الاستجابة سواء كانت قاموساً أو قائمة (حل مشكلة image_9ef57c.png)
+        videos = []
+        if isinstance(response, dict):
+            videos = response.get('data', {}).get('videos', [])
+        elif isinstance(response, list):
+            videos = response
+            
+        if not videos: 
+            logging.warning("لا توجد فيديوهات في الاستجابة")
+            return
+        
         video_file = videos[0].get("play")
         
         # جلب قائمة المستخدمين
@@ -44,16 +51,13 @@ async def send_trends_auto_manual(app):
         # إرسال الفيديو للمستخدمين
         for user in users:
             try:
-                # إرسال الفيديو مباشرة دون طلب إضافي لتسريع العملية
                 await app.bot.send_video(
                     chat_id=user[0], 
                     video=video_file, 
                     caption=f"🔥 فيديو ترند جديد!\n📌 {CHANNEL_USERNAME}"
                 )
-                # تأخير بسيط جداً لمنع الحظر من تليجرام
                 await asyncio.sleep(0.5) 
             except Exception:
-                # تجاهل المستخدمين الذين قاموا بحظر البوت
                 continue
     except Exception as e:
         logging.error(f"خطأ في الترند: {e}")
