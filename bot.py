@@ -1,6 +1,5 @@
 import sqlite3
 import requests
-import os
 import asyncio
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
@@ -21,7 +20,7 @@ def init_db():
 
 init_db()
 
-# --- ميزة الترند التلقائي ---
+# --- ميزات البوت ---
 def get_latest_trend_url():
     try:
         response = requests.get("https://www.tikwm.com/api/feed/list?region=SA&count=1", timeout=10).json()
@@ -46,7 +45,7 @@ async def send_trends_auto_manual(app):
 
 async def trend_loop(app):
     while True:
-        await asyncio.sleep(60) # دقيقة واحدة للتجربة
+        await asyncio.sleep(60) # توقيت الترند
         await send_trends_auto_manual(app)
 
 # --- الأوامر ---
@@ -124,6 +123,7 @@ async def post_init(application: Application):
     application.create_task(trend_loop(application))
 
 def main():
+    # الحل الجذري للتضارب: drop_pending_updates=True
     app = Application.builder().token(TOKEN).post_init(post_init).build()
     
     app.add_handler(CommandHandler("start", start))
@@ -132,7 +132,7 @@ def main():
     app.add_handler(CallbackQueryHandler(button_click))
     app.add_handler(MessageHandler(filters.TEXT & filters.ChatType.PRIVATE, handle_message))
     
-    print("البوت يعمل الآن بكامل الميزات...")
+    print("البوت يعمل الآن (نظام التشغيل الآمن)...")
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
