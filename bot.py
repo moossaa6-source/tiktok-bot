@@ -30,7 +30,7 @@ async def send_trends_auto_manual(app):
     try:
         response = requests.get("https://www.tikwm.com/api/feed/list?region=SA&count=1", timeout=10).json()
         
-        # معالجة الاستجابة سواء كانت قاموساً أو قائمة (حل مشكلة image_9ef57c.png)
+        # معالجة الاستجابة سواء كانت قاموساً أو قائمة
         videos = []
         if isinstance(response, dict):
             videos = response.get('data', {}).get('videos', [])
@@ -193,26 +193,31 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("❌ حدث خطأ أثناء جلب الفيديو، تأكد من أن الرابط صحيح أو أن الفيديو ليس خاصاً.")
 
 # --- 7. التشغيل الآمن ---
-async def post_init(application: Application):
-    # تشغيل حلقة الترند بشكل آمن بعد أن يبدأ البوت
-    application.create_task(trend_loop(application))
-
 def main():
-    # بناء التطبيق مع تفريغ التحديثات القديمة لتفادي خطأ (Conflict)
-    app = Application.builder().token(TOKEN).post_init(post_init).build()
+    # بناء التطبيق
+    app = Application.builder().token(TOKEN).build()
     
     # تسجيل الأوامر
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("share", share))
     app.add_handler(CommandHandler("admin", admin_panel))
-    
-    # تسجيل الأزرار والنصوص
     app.add_handler(CallbackQueryHandler(button_click))
     app.add_handler(MessageHandler(filters.TEXT & filters.ChatType.PRIVATE, handle_message))
     
-    print("🚀 البوت يعمل الآن بكامل الميزات وبشكل مستقر...")
-    # تشغيل البوت مع تنظيف أي جلسات سابقة
-    app.run_polling(drop_pending_updates=True)
+    # تشغيل المهمة بعد بدء التطبيق مباشرة بطريقة آمنة
+    async def run_bot():
+        async with app:
+            await app.initialize()
+            # تشغيل حلقة الترند هنا لضمان عملها
+            asyncio.create_task(trend_loop(app))
+            await app.start()
+            await app.updater.start_polling(drop_pending_updates=True)
+            
+            print("🚀 البوت يعمل الآن بكامل الميزات وبشكل مستقر...")
+            # إبقاء البوت يعمل
+            await asyncio.Event().wait()
+
+    asyncio.run(run_bot())
 
 if __name__ == "__main__":
     main()
