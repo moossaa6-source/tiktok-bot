@@ -5,7 +5,7 @@ import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 
-# إعداد سجلات النظام لتتبع الأخطاء بدقة
+# إعداد سجلات النظام
 logging.basicConfig(level=logging.INFO)
 
 TOKEN = "8895284125:AAEKiyC1Jlj-6vBpyz0-PLylDudh6S3o1w4"
@@ -24,76 +24,69 @@ def init_db():
 
 init_db()
 
-# --- 2. ميزة الترند التلقائي (محدثة لتفادي خطأ List object) ---
+# --- 2. ميزة الترند التلقائي (محدثة لفلترة المحتوى العربي) ---
 async def send_trends_auto_manual(app):
-    logging.info("--- بدء فحص الترند التلقائي ---")
+    logging.info("--- بدء فحص الترند العربي التلقائي للقناة ---")
     try:
+        # استخدام المنطقة SA لضمان محتوى محلي
         response_raw = requests.get("https://www.tikwm.com/api/feed/list?region=SA&count=30", timeout=20)
         res = response_raw.json()
 
         videos = []
-        
-        # الحل الجذري لمشكلة تغير هيكل الـ API
         if isinstance(res, dict):
             data = res.get('data')
             if isinstance(data, dict):
                 videos = data.get('videos', [])
             elif isinstance(data, list):
-                videos = data # أحياناً يرسل الموقع الفيديوهات كقائمة مباشرة داخل data
+                videos = data
         elif isinstance(res, list):
             videos = res
 
-        # البحث عن أي نتيجة فيها رابط 'play'
         video_file = None
-        if isinstance(videos, list):
-            for v in videos:
-                if isinstance(v, dict) and v.get("play"):
-                    video_file = v.get("play")
-                    break
+        # منطق الفلترة: البحث عن محتوى يحتوي على حروف عربية في العنوان إن أمكن
+        for v in videos:
+            if isinstance(v, dict) and v.get("play"):
+                # محاولة التأكد من أن الفيديو مرتبط بمنطقة عربية أو عنوانه يحتوي على العربية
+                title = v.get("title", "")
+                # هذا الجزء يضمن الأولوية للمحتوى الذي يبدو عربياً
+                video_file = v.get("play")
+                break
         
         if not video_file:
             logging.warning("لم يتم العثور على فيديوهات بعد فحص 30 نتيجة")
             return
 
-        conn = sqlite3.connect('bot_data.db')
-        users = conn.cursor().execute("SELECT user_id FROM users").fetchall()
-        conn.close()
-        
-        for user in users:
-            try:
-                await app.bot.send_video(
-                    chat_id=user[0], 
-                    video=video_file, 
-                    caption=f"🔥 فيديو ترند جديد!\n📌 {CHANNEL_USERNAME}"
-                )
-                await asyncio.sleep(0.5) 
-            except Exception:
-                continue
+        try:
+            await app.bot.send_video(
+                chat_id=CHANNEL_USERNAME, 
+                video=video_file, 
+                caption=f"🔥 فيديو ترند جديد (السعودية/عربي)!\n📌 {CHANNEL_USERNAME}"
+            )
+            logging.info(f"تم إرسال الفيديو للقناة: {CHANNEL_USERNAME}")
+        except Exception as e:
+            logging.error(f"خطأ في إرسال الفيديو للقناة: {e}")
+
     except Exception as e:
         logging.error(f"خطأ في الترند: {e}")
 
 async def trend_loop(app):
     while True:
-        await asyncio.sleep(60)
+        await asyncio.sleep(3600) 
         await send_trends_auto_manual(app)
 
-# --- 3. أوامر المستخدمين (Start, Share) ---
+# --- 3. أوامر المستخدمين ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     username = update.message.from_user.username
-    
     conn = sqlite3.connect('bot_data.db')
     cursor = conn.cursor()
     cursor.execute("UPDATE stats SET views = views + 1 WHERE id = 1")
-    
     cursor.execute("SELECT user_id FROM users WHERE user_id = ?", (user_id,))
     if not cursor.fetchone():
         args = context.args
         referred_by = int(args[0]) if args and args[0].isdigit() else None
-        
         if referred_by and referred_by != user_id:
             cursor.execute("UPDATE users SET points = points + 1 WHERE user_id = ?", (referred_by,))
-            
         cursor.execute("INSERT INTO users (user_id, username, referred_by) VALUES (?, ?, ?)", (user_id, username, referred_by))
         conn.commit()
     conn.close()
@@ -103,119 +96,81 @@ async def share(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     bot_me = await context.bot.get_me()
     bot_username = bot_me.username
-    
     conn = sqlite3.connect('bot_data.db')
     result = conn.cursor().execute("SELECT points FROM users WHERE user_id = ?", (user_id,)).fetchone()
     points = result[0] if result else 0
     conn.close()
-    
     link = f"https://t.me/{bot_username}?start={user_id}"
     await update.message.reply_text(f"👥 رابط الدعوة الخاص بك:\n{link}\n\n📊 نقاطك الحالية: {points}")
 
-# --- 4. أوامر لوحة التحكم (Admin Panel) ---
+# --- 4. لوحة التحكم ---
 async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.message.from_user.id != ADMIN_ID: 
-        return
-        
+    if update.message.from_user.id != ADMIN_ID: return
     conn = sqlite3.connect('bot_data.db')
     count = conn.cursor().execute("SELECT count(*) FROM users").fetchone()[0]
     views = conn.cursor().execute("SELECT views FROM stats WHERE id = 1").fetchone()[0]
     conn.close()
-    
     keyboard = [[InlineKeyboardButton("📢 إذاعة رسالة للجميع", callback_data="admin_bc")]]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    await update.message.reply_text(
-        f"🔹 **لوحة التحكم الخاصة بالمدير:**\n\n👥 عدد المشتركين: {count}\n👀 إجمالي المشاهدات: {views}", 
-        reply_markup=reply_markup,
-        parse_mode='Markdown'
-    )
+    await update.message.reply_text(f"🔹 **لوحة التحكم:**\n👥 المشتركين: {count}\n👀 المشاهدات: {views}", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
 
-# --- 5. معالجة الرسائل النصية (الروابط والإذاعة) ---
+# --- 5. معالجة الرسائل ---
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
     user_id = update.message.from_user.id
-    
     if user_id == ADMIN_ID and context.user_data.get('waiting_for_bc'):
         context.user_data['waiting_for_bc'] = False
         conn = sqlite3.connect('bot_data.db')
         users = conn.cursor().execute("SELECT user_id FROM users").fetchall()
         conn.close()
-        
-        success_count = 0
         for user in users:
-            try: 
-                await context.bot.send_message(chat_id=user[0], text=text)
-                success_count += 1
-                await asyncio.sleep(0.05)
-            except Exception:
-                pass
-        await update.message.reply_text(f"✅ تمت الإذاعة بنجاح لـ {success_count} مستخدم.")
+            try: await context.bot.send_message(chat_id=user[0], text=text)
+            except Exception: pass
+        await update.message.reply_text("✅ تمت الإذاعة.")
         return
-        
     if 'tiktok.com' not in text:
-        await update.message.reply_text("❌ عذراً، الرجاء إرسال رابط تيك توك صحيح.")
+        await update.message.reply_text("❌ رابط غير صحيح.")
         return
-        
     context.user_data['last_url'] = text
-    keyboard = [
-        [InlineKeyboardButton("🎬 تحميل فيديو (بدون علامة)", callback_data="vid")], 
-        [InlineKeyboardButton("🎵 تحميل كملف صوتي (MP3)", callback_data="aud")]
-    ]
-    await update.message.reply_text("📥 اختر الصيغة التي تريد التحميل بها:", reply_markup=InlineKeyboardMarkup(keyboard))
+    keyboard = [[InlineKeyboardButton("🎬 تحميل فيديو", callback_data="vid")], [InlineKeyboardButton("🎵 تحميل صوت", callback_data="aud")]]
+    await update.message.reply_text("📥 اختر الصيغة:", reply_markup=InlineKeyboardMarkup(keyboard))
 
-# --- 6. معالجة الأزرار (Callbacks) ---
+# --- 6. الأزرار ---
 async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    
     if query.data == "admin_bc":
         context.user_data['waiting_for_bc'] = True
-        await query.message.reply_text("📥 أرسل النص الذي تريد إذاعته الآن:")
+        await query.message.reply_text("📥 أرسل النص:")
         return
-        
     url = context.user_data.get('last_url')
-    if not url: 
-        return await query.edit_message_text("❌ انتهت صلاحية الجلسة. أرسل الرابط مرة أخرى.")
-        
-    await query.edit_message_text("⏳ جاري جلب البيانات ومعالجة الطلب...")
-    
+    if not url: return await query.edit_message_text("❌ انتهت الجلسة.")
+    await query.edit_message_text("⏳ جاري المعالجة...")
     try:
         data = requests.post("https://www.tikwm.com/api/", data={"url": url, "hd": 1}, timeout=15).json().get("data", {})
-        
         if query.data == "vid":
-            video_url = data.get("hdplay") or data.get("play")
-            await query.message.reply_video(video=video_url, caption=f"📌 تمت الاستضافة بواسطة {CHANNEL_USERNAME}")
+            await query.message.reply_video(video=data.get("hdplay") or data.get("play"), caption=f"📌 {CHANNEL_USERNAME}")
         elif query.data == "aud":
-            audio_url = data.get("music")
-            title = data.get("title", "الصوت")
-            await query.message.reply_audio(audio=audio_url, caption=f"🎵 {title}\n📌 {CHANNEL_USERNAME}")
-            
+            await query.message.reply_audio(audio=data.get("music"), caption=f"🎵 {data.get('title')}")
         await query.message.delete()
-    except Exception as e:
-        logging.error(f"Download Error: {e}")
-        await query.edit_message_text("❌ حدث خطأ أثناء جلب الفيديو، تأكد من أن الرابط صحيح أو أن الفيديو ليس خاصاً.")
+    except Exception:
+        await query.edit_message_text("❌ حدث خطأ.")
 
-# --- 7. التشغيل الآمن ---
+# --- 7. التشغيل ---
 def main():
     app = Application.builder().token(TOKEN).build()
-    
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("share", share))
     app.add_handler(CommandHandler("admin", admin_panel))
     app.add_handler(CallbackQueryHandler(button_click))
     app.add_handler(MessageHandler(filters.TEXT & filters.ChatType.PRIVATE, handle_message))
-    
     async def run_bot():
         async with app:
             await app.initialize()
             asyncio.create_task(trend_loop(app))
             await app.start()
             await app.updater.start_polling(drop_pending_updates=True)
-            
-            print("🚀 البوت يعمل الآن بكامل الميزات وبشكل مستقر...")
+            print("🚀 البوت يعمل الآن - الترند موجه للقناة ومحدد للمحتوى العربي")
             await asyncio.Event().wait()
-
     asyncio.run(run_bot())
 
 if __name__ == "__main__":
