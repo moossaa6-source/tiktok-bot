@@ -24,12 +24,12 @@ def init_db():
 
 init_db()
 
-# --- 2. ميزة الترند التلقائي (محدثة لتجاوز الصور والبحث عن فيديوهات حقيقية) ---
+# --- 2. ميزة الترند التلقائي (محدثة لزيادة فرص العثور على فيديو) ---
 async def send_trends_auto_manual(app):
     logging.info("--- بدء فحص الترند التلقائي ---")
     try:
-        # زيادة العدد للبحث عن فيديو حقيقي
-        response_raw = requests.get("https://www.tikwm.com/api/feed/list?region=SA&count=5", timeout=15)
+        # زيادة count إلى 20 لضمان وجود فيديو وسط الصور
+        response_raw = requests.get("https://www.tikwm.com/api/feed/list?region=SA&count=20", timeout=15)
         res = response_raw.json()
 
         videos = []
@@ -43,15 +43,15 @@ async def send_trends_auto_manual(app):
                     videos = item.get('videos', [])
                     break
         
-        # البحث عن أول عنصر مدته أكبر من 0 (فيديو حقيقي)
+        # البحث عن أي نتيجة فيها رابط 'play'
         video_file = None
         for v in videos:
-            if isinstance(v, dict) and v.get("duration", 0) > 0:
+            if isinstance(v, dict) and v.get("play"):
                 video_file = v.get("play")
                 break
         
         if not video_file:
-            logging.warning("لم يتم العثور على فيديوهات حقيقية (النتائج الحالية صور)")
+            logging.warning("لم يتم العثور على أي رابط فيديو في النتائج الحالية")
             return
 
         conn = sqlite3.connect('bot_data.db')
@@ -73,7 +73,7 @@ async def send_trends_auto_manual(app):
 
 async def trend_loop(app):
     while True:
-        await asyncio.sleep(60)
+        await asyncio.sleep(60) # فاصل زمني: 60 ثانية
         await send_trends_auto_manual(app)
 
 # --- 3. أوامر المستخدمين (Start, Share) ---
@@ -87,6 +87,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     cursor.execute("SELECT user_id FROM users WHERE user_id = ?", (user_id,))
     if not cursor.fetchone():
+        # معالجة نظام الإحالة (دعوة الأصدقاء)
         args = context.args
         referred_by = int(args[0]) if args and args[0].isdigit() else None
         
@@ -147,7 +148,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             try: 
                 await context.bot.send_message(chat_id=user[0], text=text)
                 success_count += 1
-                await asyncio.sleep(0.05) 
+                await asyncio.sleep(0.05) # منع حظر السبام
             except Exception:
                 pass
         await update.message.reply_text(f"✅ تمت الإذاعة بنجاح لـ {success_count} مستخدم.")
@@ -158,6 +159,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ عذراً، الرجاء إرسال رابط تيك توك صحيح.")
         return
         
+    # حفظ الرابط في الجلسة وعرض خيارات التحميل
     context.user_data['last_url'] = text
     keyboard = [
         [InlineKeyboardButton("🎬 تحميل فيديو (بدون علامة)", callback_data="vid")], 
@@ -170,14 +172,16 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     
+    # زر الإذاعة الخاص بالأدمن
     if query.data == "admin_bc":
         context.user_data['waiting_for_bc'] = True
         await query.message.reply_text("📥 أرسل النص الذي تريد إذاعته الآن:")
         return
         
+    # أزرار التحميل
     url = context.user_data.get('last_url')
     if not url: 
-        return await query.edit_message_text("❌ انتهت صلاحية الجلسة.")
+        return await query.edit_message_text("❌ انتهت صلاحية الجلسة. أرسل الرابط مرة أخرى.")
         
     await query.edit_message_text("⏳ جاري جلب البيانات ومعالجة الطلب...")
     
@@ -197,24 +201,29 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logging.error(f"Download Error: {e}")
         await query.edit_message_text("❌ حدث خطأ أثناء جلب الفيديو، تأكد من أن الرابط صحيح أو أن الفيديو ليس خاصاً.")
 
-# --- 7. التشغيل ---
+# --- 7. التشغيل الآمن ---
 def main():
+    # بناء التطبيق
     app = Application.builder().token(TOKEN).build()
     
+    # تسجيل الأوامر
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("share", share))
     app.add_handler(CommandHandler("admin", admin_panel))
     app.add_handler(CallbackQueryHandler(button_click))
     app.add_handler(MessageHandler(filters.TEXT & filters.ChatType.PRIVATE, handle_message))
     
+    # تشغيل المهمة بعد بدء التطبيق مباشرة بطريقة آمنة
     async def run_bot():
         async with app:
             await app.initialize()
+            # تشغيل حلقة الترند هنا لضمان عملها
             asyncio.create_task(trend_loop(app))
             await app.start()
             await app.updater.start_polling(drop_pending_updates=True)
             
             print("🚀 البوت يعمل الآن بكامل الميزات وبشكل مستقر...")
+            # إبقاء البوت يعمل
             await asyncio.Event().wait()
 
     asyncio.run(run_bot())
