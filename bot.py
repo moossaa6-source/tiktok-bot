@@ -70,8 +70,10 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await check_subscription(update, context): return
+    
     text = update.message.text
     user_id = update.message.from_user.id
+    
     if user_id == ADMIN_ID and context.user_data.get('waiting_for_bc'):
         context.user_data['waiting_for_bc'] = False
         conn = sqlite3.connect('bot_data.db')
@@ -82,8 +84,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except: pass
         await update.message.reply_text("✅ تمت الإذاعة بنجاح.")
         return
+    
     context.user_data['last_url'] = text
-    if 'tiktok.com' in text:
+    if 'tiktok.com' in text or 'vt.tiktok.com' in text:
         keyboard = [[InlineKeyboardButton("🎬 تحميل فيديو (بدون علامة)", callback_data="vid")], [InlineKeyboardButton("🎵 تحميل كملف صوتي (MP3)", callback_data="aud")]]
         await update.message.reply_text("📥 اختر الصيغة التي تريد التحميل بها:", reply_markup=InlineKeyboardMarkup(keyboard))
     elif 'instagram.com' in text:
