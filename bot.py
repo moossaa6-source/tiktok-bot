@@ -2,6 +2,7 @@ import sqlite3
 import requests
 import asyncio
 import logging
+import re
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 
@@ -134,25 +135,43 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
     await query.edit_message_text("⏳ جاري جلب البيانات ومعالجة الطلب...")
     
-    # --- تحميل الانستقرام (محدث) ---
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
+
+    # --- تحميل الانستقرام (المحدث لاستخراج MP4 مباشرة) ---
     if query.data == "vid_ig":
         try:
-            ig_url = url.replace("instagram.com", "ddinstagram.com").replace("www.", "")
-            # نستخدم رابط مخفي في النص لكي يقرأه تليجرام كفيديو مباشر
-            await query.message.reply_text(
-                text=f"[‎]({ig_url})📌 تمت الاستضافة بواسطة {CHANNEL_USERNAME}", 
-                parse_mode='Markdown'
-            )
+            # استبدال النطاق للوصول إلى سيرفر بديل
+            ig_proxy_url = url.replace("instagram.com", "ddinstagram.com").replace("www.", "")
+            
+            # جلب الصفحة للبحث عن رابط الفيديو المباشر
+            res = requests.get(ig_proxy_url, headers=headers, timeout=20)
+            
+            # استخراج رابط .mp4 من الكود المصدري للصفحة
+            match = re.search(r'<meta property="og:video" content="([^"]+)"', res.text)
+            
+            if match:
+                video_url = match.group(1).replace("&amp;", "&")
+                await query.message.reply_video(video=video_url, caption=f"📌 تمت الاستضافة بواسطة {CHANNEL_USERNAME}")
+            else:
+                # محاولة بسيرفر آخر إذا فشل الأول
+                ig_proxy_url_2 = url.replace("instagram.com", "rxinstagram.com").replace("www.", "")
+                res2 = requests.get(ig_proxy_url_2, headers=headers, timeout=20)
+                match2 = re.search(r'<meta property="og:video" content="([^"]+)"', res2.text)
+                
+                if match2:
+                    video_url2 = match2.group(1).replace("&amp;", "&")
+                    await query.message.reply_video(video=video_url2, caption=f"📌 تمت الاستضافة بواسطة {CHANNEL_USERNAME}")
+                else:
+                    raise Exception("لم يتم العثور على رابط فيديو مباشر")
+                    
             await query.message.delete()
         except Exception as e:
             logging.error(f"IG Download Error: {e}")
             await query.edit_message_text("❌ حدث خطأ أثناء جلب فيديو الانستقرام، تأكد من أن الرابط صحيح أو أن الحساب ليس خاصاً.")
         return
 
-    # --- تحميل التيك توك (محدث) ---
+    # --- تحميل التيك توك ---
     try:
-        # إضافة ترويسة حقيقية لكي لا يرفض الـ API الطلب
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
         response = requests.post("https://www.tikwm.com/api/", data={"url": url, "hd": 1}, headers=headers, timeout=20)
         data = response.json().get("data", {})
         
