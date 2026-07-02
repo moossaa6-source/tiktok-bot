@@ -44,7 +44,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         cursor.execute("INSERT INTO users (user_id, username, referred_by) VALUES (?, ?, ?)", (user_id, username, referred_by))
         conn.commit()
     conn.close()
-    await update.message.reply_text("🎉 أهلاً بك! أرسل رابط تيك توك للتحميل بصيغة HD أو MP3 🚀")
+    await update.message.reply_text("🎉 أهلاً بك! أرسل رابط تيك توك أو انستقرام للتحميل 🚀")
 
 async def share(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
@@ -100,16 +100,24 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"✅ تمت الإذاعة بنجاح لـ {success_count} مستخدم.")
         return
         
-    if 'tiktok.com' not in text:
-        await update.message.reply_text("❌ عذراً، الرجاء إرسال رابط تيك توك صحيح.")
-        return
-        
     context.user_data['last_url'] = text
-    keyboard = [
-        [InlineKeyboardButton("🎬 تحميل فيديو (بدون علامة)", callback_data="vid")], 
-        [InlineKeyboardButton("🎵 تحميل كملف صوتي (MP3)", callback_data="aud")]
-    ]
-    await update.message.reply_text("📥 اختر الصيغة التي تريد التحميل بها:", reply_markup=InlineKeyboardMarkup(keyboard))
+    
+    # التعرف على نوع الرابط لتحديد الأزرار المناسبة
+    if 'tiktok.com' in text:
+        keyboard = [
+            [InlineKeyboardButton("🎬 تحميل فيديو (بدون علامة)", callback_data="vid")], 
+            [InlineKeyboardButton("🎵 تحميل كملف صوتي (MP3)", callback_data="aud")]
+        ]
+        await update.message.reply_text("📥 اختر الصيغة التي تريد التحميل بها:", reply_markup=InlineKeyboardMarkup(keyboard))
+    
+    elif 'instagram.com' in text:
+        keyboard = [
+            [InlineKeyboardButton("🎬 تحميل فيديو الانستقرام", callback_data="vid_ig")]
+        ]
+        await update.message.reply_text("📥 تم التعرف على رابط الانستقرام:", reply_markup=InlineKeyboardMarkup(keyboard))
+        
+    else:
+        await update.message.reply_text("❌ عذراً، الرجاء إرسال رابط تيك توك أو انستقرام صحيح.")
 
 # --- 5. معالجة الأزرار (Callbacks) ---
 async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -127,6 +135,19 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
     await query.edit_message_text("⏳ جاري جلب البيانات ومعالجة الطلب...")
     
+    # تحميل الانستقرام
+    if query.data == "vid_ig":
+        try:
+            # استبدال النطاق ليقوم تليجرام بسحب الفيديو مباشرة
+            ig_url = url.replace("instagram.com", "ddinstagram.com").replace("www.", "")
+            await query.message.reply_video(video=ig_url, caption=f"📌 تمت الاستضافة بواسطة {CHANNEL_USERNAME}")
+            await query.message.delete()
+        except Exception as e:
+            logging.error(f"IG Download Error: {e}")
+            await query.edit_message_text("❌ حدث خطأ أثناء جلب فيديو الانستقرام، تأكد من أن الرابط صحيح أو أن الحساب ليس خاصاً.")
+        return
+
+    # تحميل التيك توك
     try:
         data = requests.post("https://www.tikwm.com/api/", data={"url": url, "hd": 1}, timeout=15).json().get("data", {})
         
@@ -140,7 +161,7 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
         await query.message.delete()
     except Exception as e:
-        logging.error(f"Download Error: {e}")
+        logging.error(f"TikTok Download Error: {e}")
         await query.edit_message_text("❌ حدث خطأ أثناء جلب الفيديو، تأكد من أن الرابط صحيح أو أن الفيديو ليس خاصاً.")
 
 # --- 6. التشغيل الآمن ---
