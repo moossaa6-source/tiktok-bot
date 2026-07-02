@@ -1,7 +1,7 @@
 import sqlite3
 import requests
 import logging
-import instaloader
+import yt_dlp
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 
@@ -23,9 +23,6 @@ def init_db():
     conn.close()
 
 init_db()
-
-# تهيئة Instaloader
-L = instaloader.Instaloader(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36")
 
 # --- 2. الأوامر ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -85,10 +82,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif 'instagram.com' in text:
         keyboard = [[InlineKeyboardButton("🎬 تحميل فيديو الانستقرام", callback_data="vid_ig")]]
         await update.message.reply_text("📥 تم التعرف على رابط الانستقرام:", reply_markup=InlineKeyboardMarkup(keyboard))
-    else:
-        await update.message.reply_text("❌ عذراً، الرجاء إرسال رابط تيك توك أو انستقرام صحيح.")
 
-# --- 4. معالجة التحميل ---
+# --- 4. معالجة التحميل المطور ---
 async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -98,13 +93,15 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     
     url = context.user_data.get('last_url')
-    await query.edit_message_text("⏳ جاري جلب البيانات...")
+    await query.edit_message_text("⏳ جاري جلب البيانات عبر yt-dlp...")
     
     try:
         if query.data == "vid_ig":
-            shortcode = url.split("/")[-2]
-            post = instaloader.Post.from_shortcode(L.context, shortcode)
-            await query.message.reply_video(video=post.video_url, caption=f"📌 تمت الاستضافة بواسطة {CHANNEL_USERNAME}")
+            # استخدام yt-dlp مع محاكاة متصفح كامل
+            ydl_opts = {'quiet': True, 'format': 'best'}
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=False)
+                await query.message.reply_video(video=info['url'], caption=f"📌 تمت الاستضافة بواسطة {CHANNEL_USERNAME}")
         else:
             headers = {'User-Agent': 'Mozilla/5.0'}
             response = requests.post("https://www.tikwm.com/api/", data={"url": url, "hd": 1}, headers=headers, timeout=20)
@@ -114,7 +111,7 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.message.delete()
     except Exception as e:
         logging.error(f"Error: {e}")
-        await query.edit_message_text("❌ فشل التحميل، تأكد أن الرابط عام وليس خاصاً.")
+        await query.edit_message_text("❌ فشل التحميل، هذا الرابط مقيد.")
 
 def main():
     app = Application.builder().token(TOKEN).build()
