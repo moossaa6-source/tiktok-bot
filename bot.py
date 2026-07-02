@@ -102,7 +102,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
     context.user_data['last_url'] = text
     
-    # التعرف على نوع الرابط لتحديد الأزرار المناسبة
     if 'tiktok.com' in text:
         keyboard = [
             [InlineKeyboardButton("🎬 تحميل فيديو (بدون علامة)", callback_data="vid")], 
@@ -135,28 +134,39 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
     await query.edit_message_text("⏳ جاري جلب البيانات ومعالجة الطلب...")
     
-    # تحميل الانستقرام
+    # --- تحميل الانستقرام (محدث) ---
     if query.data == "vid_ig":
         try:
-            # استبدال النطاق ليقوم تليجرام بسحب الفيديو مباشرة
             ig_url = url.replace("instagram.com", "ddinstagram.com").replace("www.", "")
-            await query.message.reply_video(video=ig_url, caption=f"📌 تمت الاستضافة بواسطة {CHANNEL_USERNAME}")
+            # نستخدم رابط مخفي في النص لكي يقرأه تليجرام كفيديو مباشر
+            await query.message.reply_text(
+                text=f"[‎]({ig_url})📌 تمت الاستضافة بواسطة {CHANNEL_USERNAME}", 
+                parse_mode='Markdown'
+            )
             await query.message.delete()
         except Exception as e:
             logging.error(f"IG Download Error: {e}")
             await query.edit_message_text("❌ حدث خطأ أثناء جلب فيديو الانستقرام، تأكد من أن الرابط صحيح أو أن الحساب ليس خاصاً.")
         return
 
-    # تحميل التيك توك
+    # --- تحميل التيك توك (محدث) ---
     try:
-        data = requests.post("https://www.tikwm.com/api/", data={"url": url, "hd": 1}, timeout=15).json().get("data", {})
+        # إضافة ترويسة حقيقية لكي لا يرفض الـ API الطلب
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
+        response = requests.post("https://www.tikwm.com/api/", data={"url": url, "hd": 1}, headers=headers, timeout=20)
+        data = response.json().get("data", {})
         
         if query.data == "vid":
             video_url = data.get("hdplay") or data.get("play")
+            if not video_url:
+                raise Exception("لا يوجد رابط فيديو مباشر")
             await query.message.reply_video(video=video_url, caption=f"📌 تمت الاستضافة بواسطة {CHANNEL_USERNAME}")
+            
         elif query.data == "aud":
             audio_url = data.get("music")
             title = data.get("title", "الصوت")
+            if not audio_url:
+                raise Exception("لا يوجد رابط صوت مباشر")
             await query.message.reply_audio(audio=audio_url, caption=f"🎵 {title}\n📌 {CHANNEL_USERNAME}")
             
         await query.message.delete()
