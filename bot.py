@@ -99,12 +99,15 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     url = context.user_data.get('last_url')
     await query.edit_message_text("⏳ جاري المعالجة...")
     
-    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36'}
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'}
 
-    # تحميل الانستقرام الجديد بـ yt-dlp
     if query.data == "vid_ig":
         try:
-            ydl_opts = {'format': 'best', 'quiet': True}
+            ydl_opts = {
+                'format': 'best', 
+                'quiet': True,
+                'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'
+            }
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(url, download=False)
                 video_url = info.get('url')
@@ -112,10 +115,9 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.message.delete()
         except Exception as e:
             logging.error(f"IG Error: {e}")
-            await query.edit_message_text("❌ فشل تحميل الانستقرام، يرجى المحاولة لاحقاً.")
+            await query.edit_message_text("❌ حدث خطأ، تأكد من أن الرابط عام وليس خاصاً.")
         return
 
-    # تحميل التيك توك
     try:
         response = requests.post("https://www.tikwm.com/api/", data={"url": url, "hd": 1}, headers=headers, timeout=20)
         data = response.json().get("data", {})
