@@ -1,12 +1,11 @@
 import sqlite3
 import requests
-import asyncio
 import logging
 import yt_dlp
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 
-# إعداد سجلات النظام
+# إعداد السجلات
 logging.basicConfig(level=logging.INFO)
 
 TOKEN = "8895284125:AAEKiyC1Jlj-6vBpyz0-PLylDudh6S3o1w4"
@@ -25,7 +24,7 @@ def init_db():
 
 init_db()
 
-# --- 2. أوامر المستخدمين ---
+# --- 2. الأوامر ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     username = update.message.from_user.username
@@ -98,7 +97,12 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     try:
         if query.data == "vid_ig":
-            ydl_opts = {'format': 'best', 'quiet': True}
+            # إعدادات متقدمة للمحاكاة
+            ydl_opts = {
+                'format': 'best',
+                'quiet': True,
+                'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            }
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(url, download=False)
                 video_url = info.get('url')
@@ -112,7 +116,7 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.message.delete()
     except Exception as e:
         logging.error(f"Error: {e}")
-        await query.edit_message_text("❌ فشل التحميل، تأكد أن الرابط عام.")
+        await query.edit_message_text("❌ فشل التحميل، تأكد أن الرابط عام وليس خاصاً.")
 
 def main():
     app = Application.builder().token(TOKEN).build()
