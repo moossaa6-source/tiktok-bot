@@ -3,7 +3,6 @@ import requests
 import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
-from playwright.async_api import async_playwright
 
 logging.basicConfig(level=logging.INFO)
 
@@ -108,26 +107,10 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.edit_message_text("⏳ جاري التحميل، يرجى الانتظار...")
     try:
         if query.data == "vid_ig":
-            async with async_playwright() as p:
-                browser = await p.chromium.launch()
-                ctx = await browser.new_context(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36")
-                page = await ctx.new_page()
-                await page.goto(url)
-                
-                # تحديث جذري لاستخراج الرابط بطريقة ذكية
-                video_url = await page.evaluate('''() => {
-                    const video = document.querySelector('video');
-                    if (video && video.src) return video.src;
-                    const meta = document.querySelector('meta[property="og:video"]');
-                    if (meta) return meta.content;
-                    return null;
-                }''')
-                
-                await browser.close()
-                if video_url:
-                    await query.message.reply_video(video=video_url, caption=f"📌 تمت الاستضافة بواسطة {CHANNEL_USERNAME}")
-                else:
-                    raise Exception("لم يتم العثور على رابط")
+            api_url = f"https://api.snapinsta.app/dl?url={url}"
+            response = requests.get(api_url).json()
+            video_url = response['data'][0]['url']
+            await query.message.reply_video(video=video_url, caption=f"📌 تمت الاستضافة بواسطة {CHANNEL_USERNAME}")
         else:
             headers = {'User-Agent': 'Mozilla/5.0'}
             resp = requests.post("https://www.tikwm.com/api/", data={"url": url, "hd": 1}, headers=headers, timeout=20)
