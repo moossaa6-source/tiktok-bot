@@ -4,6 +4,7 @@ import logging
 import yt_dlp
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
+from playwright.async_api import async_playwright
 
 # إعداد السجلات
 logging.basicConfig(level=logging.INFO)
@@ -12,6 +13,7 @@ TOKEN = "8895284125:AAEKiyC1Jlj-6vBpyz0-PLylDudh6S3o1w4"
 CHANNEL_USERNAME = '@MyDesign_Channels'
 ADMIN_ID = 8192715650
 
+# --- 1. قاعدة البيانات ---
 def init_db():
     conn = sqlite3.connect('bot_data.db')
     cursor = conn.cursor()
@@ -23,6 +25,7 @@ def init_db():
 
 init_db()
 
+# --- 2. الأوامر ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     username = update.message.from_user.username
@@ -58,6 +61,7 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [[InlineKeyboardButton("📢 إذاعة رسالة للجميع", callback_data="admin_bc")]]
     await update.message.reply_text(f"🔹 **لوحة التحكم الخاصة بالمدير:**\n\n👥 عدد المشتركين: {count}\n👀 إجمالي المشاهدات: {views}", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
 
+# --- 3. معالجة الرسائل ---
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
     user_id = update.message.from_user.id
@@ -80,6 +84,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         keyboard = [[InlineKeyboardButton("🎬 تحميل فيديو الانستقرام", callback_data="vid_ig")]]
         await update.message.reply_text("📥 تم التعرف على رابط الانستقرام:", reply_markup=InlineKeyboardMarkup(keyboard))
 
+# --- 4. معالجة التحميل ---
 async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -93,9 +98,14 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     try:
         if query.data == "vid_ig":
-            response = requests.get(f"https://snapinsta.app/api/ajax/getMedia?url={url}", timeout=10).json()
-            video_url = response['data'][0]['video_url']
-            await query.message.reply_video(video=video_url, caption=f"📌 تمت الاستضافة بواسطة {CHANNEL_USERNAME}")
+            async with async_playwright() as p:
+                browser = await p.chromium.launch()
+                page = await browser.new_page()
+                await page.goto(url)
+                video_element = await page.wait_for_selector("video")
+                video_url = await video_element.get_attribute("src")
+                await browser.close()
+                await query.message.reply_video(video=video_url, caption=f"📌 تمت الاستضافة بواسطة {CHANNEL_USERNAME}")
         else:
             headers = {'User-Agent': 'Mozilla/5.0'}
             resp = requests.post("https://www.tikwm.com/api/", data={"url": url, "hd": 1}, headers=headers, timeout=20)
