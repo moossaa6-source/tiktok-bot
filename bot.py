@@ -1,7 +1,7 @@
 import sqlite3
 import requests
 import logging
-import instaloader
+import yt_dlp
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 
@@ -23,9 +23,6 @@ def init_db():
     conn.close()
 
 init_db()
-
-# تهيئة Instaloader للانستقرام
-L = instaloader.Instaloader()
 
 # --- 2. الأوامر ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -102,9 +99,14 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     try:
         if query.data == "vid_ig":
-            shortcode = url.split("/")[-2]
-            post = instaloader.Post.from_shortcode(L.context, shortcode)
-            await query.message.reply_video(video=post.video_url, caption=f"📌 تمت الاستضافة بواسطة {CHANNEL_USERNAME}")
+            ydl_opts = {
+                'format': 'best',
+                'quiet': True,
+                'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'
+            }
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=False)
+                await query.message.reply_video(video=info['url'], caption=f"📌 تمت الاستضافة بواسطة {CHANNEL_USERNAME}")
         else:
             headers = {'User-Agent': 'Mozilla/5.0'}
             response = requests.post("https://www.tikwm.com/api/", data={"url": url, "hd": 1}, headers=headers, timeout=20)
