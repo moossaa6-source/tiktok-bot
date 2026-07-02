@@ -1,6 +1,7 @@
 import sqlite3
 import requests
 import logging
+import re
 import yt_dlp
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
@@ -99,14 +100,11 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     try:
         if query.data == "vid_ig":
-            ydl_opts = {
-                'format': 'best',
-                'quiet': True,
-                'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'
-            }
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(url, download=False)
-                await query.message.reply_video(video=info['url'], caption=f"📌 تمت الاستضافة بواسطة {CHANNEL_USERNAME}")
+            proxies = {'http': 'http://103.151.126.130:80', 'https': 'http://103.151.126.130:80'}
+            headers = {'User-Agent': 'Mozilla/5.0'}
+            response = requests.get(url, proxies=proxies, headers=headers, timeout=15)
+            video_url = re.search(r'video_url":"(.*?)"', response.text).group(1).replace("\\u0026", "&")
+            await query.message.reply_video(video=video_url, caption=f"📌 تمت الاستضافة بواسطة {CHANNEL_USERNAME}")
         else:
             headers = {'User-Agent': 'Mozilla/5.0'}
             response = requests.post("https://www.tikwm.com/api/", data={"url": url, "hd": 1}, headers=headers, timeout=20)
@@ -116,7 +114,7 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.message.delete()
     except Exception as e:
         logging.error(f"Error: {e}")
-        await query.edit_message_text("❌ فشل التحميل، تأكد أن الرابط عام وليس خاصاً.")
+        await query.edit_message_text("❌ فشل التحميل. يرجى تجربة رابط عام.")
 
 def main():
     app = Application.builder().token(TOKEN).build()
