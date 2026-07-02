@@ -23,10 +23,8 @@ def init_db():
 
 init_db()
 
-# التعديل هنا: استثناء الأدمن من شرط الاشتراك
 async def check_subscription(context, user_id):
-    if user_id == ADMIN_ID:
-        return True
+    if user_id == ADMIN_ID: return True
     try:
         member = await context.bot.get_chat_member(chat_id=CHANNEL_ID, user_id=user_id)
         return member.status in ['member', 'administrator', 'creator']
@@ -89,11 +87,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
     context.user_data['last_url'] = text
     if 'tiktok.com' in text or 'vt.tiktok.com' in text:
-        keyboard = [[InlineKeyboardButton("🎬 فيديو", callback_data="vid")], [InlineKeyboardButton("🎵 صوتي", callback_data="aud")]]
-        await update.message.reply_text("📥 اختر الصيغة:", reply_markup=InlineKeyboardMarkup(keyboard))
+        keyboard = [[InlineKeyboardButton("🎬 تحميل فيديو (بدون علامة)", callback_data="vid")], [InlineKeyboardButton("🎵 تحميل كملف صوتي (MP3)", callback_data="aud")]]
+        await update.message.reply_text("📥 اختر الصيغة التي تريد التحميل بها:", reply_markup=InlineKeyboardMarkup(keyboard))
     elif 'instagram.com' in text:
-        keyboard = [[InlineKeyboardButton("🎬 فيديو انستقرام", callback_data="vid_ig")]]
-        await update.message.reply_text("📥 تم التعرف على الرابط:", reply_markup=InlineKeyboardMarkup(keyboard))
+        keyboard = [[InlineKeyboardButton("🎬 تحميل فيديو الانستقرام", callback_data="vid_ig")]]
+        await update.message.reply_text("📥 تم التعرف على رابط الانستقرام:", reply_markup=InlineKeyboardMarkup(keyboard))
+    else:
+        await update.message.reply_text("❌ عذراً، الرابط غير صحيح. يرجى إرسال رابط تيك توك أو انستقرام.")
 
 async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -105,7 +105,7 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await check_subscription(context, query.from_user.id): return
     
     url = context.user_data.get('last_url')
-    await query.edit_message_text("⏳ جاري التحميل...")
+    await query.edit_message_text("⏳ جاري التحميل، يرجى الانتظار...")
     try:
         if query.data == "vid_ig":
             async with async_playwright() as p:
@@ -116,16 +116,16 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 video_element = await page.wait_for_selector("video", timeout=20000)
                 video_url = await video_element.get_attribute("src")
                 await browser.close()
-                await query.message.reply_video(video=video_url, caption=f"📌 بواسطة {CHANNEL_USERNAME}")
+                await query.message.reply_video(video=video_url, caption=f"📌 تمت الاستضافة بواسطة {CHANNEL_USERNAME}")
         else:
             headers = {'User-Agent': 'Mozilla/5.0'}
             resp = requests.post("https://www.tikwm.com/api/", data={"url": url, "hd": 1}, headers=headers, timeout=20)
             data = resp.json().get("data", {})
-            if query.data == "vid": await query.message.reply_video(video=data.get("hdplay") or data.get("play"), caption=f"📌 بواسطة {CHANNEL_USERNAME}")
+            if query.data == "vid": await query.message.reply_video(video=data.get("hdplay") or data.get("play"), caption=f"📌 تمت الاستضافة بواسطة {CHANNEL_USERNAME}")
             elif query.data == "aud": await query.message.reply_audio(audio=data.get("music"), caption=f"🎵 {data.get('title')}\n📌 {CHANNEL_USERNAME}")
         await query.message.delete()
     except Exception:
-        await query.edit_message_text("❌ فشل التحميل.")
+        await query.edit_message_text("❌ فشل التحميل، الرابط قد يكون خاصاً أو مقيداً.")
 
 def main():
     app = Application.builder().token(TOKEN).build()
