@@ -1,7 +1,7 @@
 import sqlite3
 import requests
 import logging
-import yt_dlp
+import instaloader
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 
@@ -23,6 +23,9 @@ def init_db():
     conn.close()
 
 init_db()
+
+# تهيئة Instaloader للانستقرام
+L = instaloader.Instaloader()
 
 # --- 2. الأوامر ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -74,6 +77,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except: pass
         await update.message.reply_text("✅ تمت الإذاعة بنجاح.")
         return
+    
     context.user_data['last_url'] = text
     if 'tiktok.com' in text:
         keyboard = [[InlineKeyboardButton("🎬 تحميل فيديو (بدون علامة)", callback_data="vid")], [InlineKeyboardButton("🎵 تحميل كملف صوتي (MP3)", callback_data="aud")]]
@@ -92,21 +96,15 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data['waiting_for_bc'] = True
         await query.message.reply_text("📥 أرسل النص الذي تريد إذاعته الآن:")
         return
+    
     url = context.user_data.get('last_url')
     await query.edit_message_text("⏳ جاري جلب البيانات...")
     
     try:
         if query.data == "vid_ig":
-            # إعدادات متقدمة للمحاكاة
-            ydl_opts = {
-                'format': 'best',
-                'quiet': True,
-                'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-            }
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(url, download=False)
-                video_url = info.get('url')
-            await query.message.reply_video(video=video_url, caption=f"📌 تمت الاستضافة بواسطة {CHANNEL_USERNAME}")
+            shortcode = url.split("/")[-2]
+            post = instaloader.Post.from_shortcode(L.context, shortcode)
+            await query.message.reply_video(video=post.video_url, caption=f"📌 تمت الاستضافة بواسطة {CHANNEL_USERNAME}")
         else:
             headers = {'User-Agent': 'Mozilla/5.0'}
             response = requests.post("https://www.tikwm.com/api/", data={"url": url, "hd": 1}, headers=headers, timeout=20)
