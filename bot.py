@@ -2,11 +2,10 @@ import sqlite3
 import requests
 import asyncio
 import logging
-import yt_dlp
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 
-# إعداد سجلات النظام
+# إعداد السجلات
 logging.basicConfig(level=logging.INFO)
 
 TOKEN = "8895284125:AAEKiyC1Jlj-6vBpyz0-PLylDudh6S3o1w4"
@@ -25,7 +24,7 @@ def init_db():
 
 init_db()
 
-# --- 2. أوامر المستخدمين ---
+# --- 2. الأوامر الأساسية ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     username = update.message.from_user.username
@@ -94,31 +93,26 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.message.reply_text("📥 أرسل النص الذي تريد إذاعته الآن:")
         return
     url = context.user_data.get('last_url')
-    await query.edit_message_text("⏳ جاري المعالجة...")
+    await query.edit_message_text("⏳ جاري جلب البيانات ومعالجة الطلب...")
     
     try:
         if query.data == "vid_ig":
-            ydl_opts = {
-                'format': 'best',
-                'quiet': True,
-                'no_warnings': True,
-                'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'
-            }
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(url, download=False)
-                video_url = info.get('url')
+            # استخدام API وسيط يتخطى الحظر بدون الحاجة لكوكيز
+            api_url = f"https://api.douyin.wtf/api?url={url}"
+            response = requests.get(api_url).json()
+            video_url = response.get('video_data', {}).get('nwm_video_url_HQ') or response.get('video_data', {}).get('nwm_video_url')
+            if not video_url: raise Exception("No URL found")
             await query.message.reply_video(video=video_url, caption=f"📌 تمت الاستضافة بواسطة {CHANNEL_USERNAME}")
         else:
-            response = requests.post("https://www.tikwm.com/api/", data={"url": url, "hd": 1}, timeout=20)
+            headers = {'User-Agent': 'Mozilla/5.0'}
+            response = requests.post("https://www.tikwm.com/api/", data={"url": url, "hd": 1}, headers=headers, timeout=20)
             data = response.json().get("data", {})
-            if query.data == "vid":
-                await query.message.reply_video(video=data.get("hdplay") or data.get("play"), caption=f"📌 تمت الاستضافة بواسطة {CHANNEL_USERNAME}")
-            elif query.data == "aud":
-                await query.message.reply_audio(audio=data.get("music"), caption=f"🎵 {data.get('title')}\n📌 {CHANNEL_USERNAME}")
+            if query.data == "vid": await query.message.reply_video(video=data.get("hdplay") or data.get("play"), caption=f"📌 تمت الاستضافة بواسطة {CHANNEL_USERNAME}")
+            elif query.data == "aud": await query.message.reply_audio(audio=data.get("music"), caption=f"🎵 {data.get('title')}\n📌 {CHANNEL_USERNAME}")
         await query.message.delete()
     except Exception as e:
         logging.error(f"Error: {e}")
-        await query.edit_message_text("❌ فشل التحميل. تأكد من أن الرابط عام وليس خاصاً.")
+        await query.edit_message_text("❌ حدث خطأ، تأكد من أن الرابط عام وليس خاصاً.")
 
 def main():
     app = Application.builder().token(TOKEN).build()
