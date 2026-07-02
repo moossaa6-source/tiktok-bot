@@ -42,15 +42,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn.close()
     await update.message.reply_text("🎉 أهلاً بك! أرسل رابط تيك توك أو انستقرام للتحميل 🚀")
 
-async def share(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.message.from_user.id
-    bot_me = await context.bot.get_me()
-    conn = sqlite3.connect('bot_data.db')
-    result = conn.cursor().execute("SELECT points FROM users WHERE user_id = ?", (user_id,)).fetchone()
-    points = result[0] if result else 0
-    conn.close()
-    await update.message.reply_text(f"👥 رابط الدعوة الخاص بك:\nhttps://t.me/{bot_me.username}?start={user_id}\n\n📊 نقاطك الحالية: {points}")
-
 async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message.from_user.id != ADMIN_ID: return
     conn = sqlite3.connect('bot_data.db')
@@ -82,10 +73,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif 'instagram.com' in text:
         keyboard = [[InlineKeyboardButton("🎬 تحميل فيديو الانستقرام", callback_data="vid_ig")]]
         await update.message.reply_text("📥 تم التعرف على رابط الانستقرام:", reply_markup=InlineKeyboardMarkup(keyboard))
-    else:
-        await update.message.reply_text("❌ عذراً، الرجاء إرسال رابط تيك توك أو انستقرام صحيح.")
 
-# --- 4. معالجة التحميل ---
+# --- 4. معالجة التحميل (دمج كل الحلول) ---
 async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -95,37 +84,39 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     
     url = context.user_data.get('last_url')
-    await query.edit_message_text("⏳ جاري جلب البيانات...")
+    await query.edit_message_text("⏳ جاري المعالجة بكل الطرق...")
     
     try:
         if query.data == "vid_ig":
-            ydl_opts = {
-                'quiet': True,
-                'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
-                'format': 'best'
-            }
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(url, download=False)
-                await query.message.reply_video(video=info['url'], caption=f"📌 تمت الاستضافة بواسطة {CHANNEL_USERNAME}")
+            try:
+                # الحل 1: yt-dlp بمحاكاة متصفح
+                ydl_opts = {'quiet': True, 'user_agent': 'Mozilla/5.0', 'format': 'best'}
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    info = ydl.extract_info(url, download=False)
+                    video_url = info['url']
+            except:
+                # الحل 2 (Fallback): استخدام SnapInsta API
+                resp = requests.get(f"https://snapinsta.app/api/ajax/getMedia?url={url}").json()
+                video_url = resp['data'][0]['video_url']
+            
+            await query.message.reply_video(video=video_url, caption=f"📌 تمت الاستضافة بواسطة {CHANNEL_USERNAME}")
         else:
             headers = {'User-Agent': 'Mozilla/5.0'}
-            response = requests.post("https://www.tikwm.com/api/", data={"url": url, "hd": 1}, headers=headers, timeout=20)
-            data = response.json().get("data", {})
+            resp = requests.post("https://www.tikwm.com/api/", data={"url": url, "hd": 1}, headers=headers, timeout=20)
+            data = resp.json().get("data", {})
             if query.data == "vid": await query.message.reply_video(video=data.get("hdplay") or data.get("play"), caption=f"📌 تمت الاستضافة بواسطة {CHANNEL_USERNAME}")
             elif query.data == "aud": await query.message.reply_audio(audio=data.get("music"), caption=f"🎵 {data.get('title')}\n📌 {CHANNEL_USERNAME}")
         await query.message.delete()
     except Exception as e:
         logging.error(f"Error: {e}")
-        await query.edit_message_text("❌ فشل التحميل، تأكد أن الرابط عام وليس خاصاً.")
+        await query.edit_message_text("❌ فشل التحميل، هذا الرابط مقيد جداً.")
 
 def main():
     app = Application.builder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("share", share))
     app.add_handler(CommandHandler("admin", admin_panel))
     app.add_handler(CallbackQueryHandler(button_click))
     app.add_handler(MessageHandler(filters.TEXT & filters.ChatType.PRIVATE, handle_message))
-    print("🚀 البوت يعمل الآن بكامل الميزات...")
     app.run_polling()
 
 if __name__ == "__main__":
