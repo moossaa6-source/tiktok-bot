@@ -85,11 +85,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
         
     context.user_data['last_url'] = text
-    if 'tiktok.com' in text or 'instagram.com' in text:
-        keyboard = [[InlineKeyboardButton("📥 تحميل الفيديو", callback_data="download_all")]]
-        await update.message.reply_text("📥 تم التعرف على الرابط، اضغط للتحميل:", reply_markup=InlineKeyboardMarkup(keyboard))
+    if 'tiktok.com' in text or 'vt.tiktok.com' in text:
+        keyboard = [[InlineKeyboardButton("🎬 تحميل فيديو (بدون علامة)", callback_data="vid")], [InlineKeyboardButton("🎵 تحميل كملف صوتي (MP3)", callback_data="aud")]]
+        await update.message.reply_text("📥 اختر الصيغة التي تريد التحميل بها:", reply_markup=InlineKeyboardMarkup(keyboard))
+    elif 'instagram.com' in text:
+        keyboard = [[InlineKeyboardButton("🎬 تحميل فيديو الانستقرام", callback_data="vid_ig")]]
+        await update.message.reply_text("📥 تم التعرف على رابط الانستقرام:", reply_markup=InlineKeyboardMarkup(keyboard))
     else:
-        await update.message.reply_text("❌ عذراً، الرابط غير صحيح.")
+        await update.message.reply_text("❌ عذراً، الرابط غير صحيح. يرجى إرسال رابط تيك توك أو انستقرام.")
 
 async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -98,24 +101,27 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data['waiting_for_bc'] = True
         await query.message.reply_text("📥 أرسل النص للإذاعة:")
         return
+    if not await check_subscription(context, query.from_user.id): return
     
     url = context.user_data.get('last_url')
-    await query.edit_message_text("⏳ جاري المعالجة، يرجى الانتظار...")
-    
+    await query.edit_message_text("⏳ جاري التحميل، يرجى الانتظار...")
     try:
-        ydl_opts = {'format': 'best', 'quiet': True}
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=False)
-            video_url = info.get('url')
-            
-        if video_url:
+        if query.data == "vid_ig":
+            ydl_opts = {'format': 'best', 'quiet': True}
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=False)
+                video_url = info.get('url')
             await query.message.reply_video(video=video_url, caption=f"📌 تمت الاستضافة بواسطة {CHANNEL_USERNAME}")
-            await query.message.delete()
         else:
-            await query.edit_message_text("❌ لم يتم العثور على الفيديو.")
-    except Exception as e:
-        logging.error(f"Error: {e}")
-        await query.edit_message_text("❌ حدث خطأ، الرابط قد يكون خاصاً أو لا يدعم التحميل المباشر.")
+            import requests
+            headers = {'User-Agent': 'Mozilla/5.0'}
+            resp = requests.post("https://www.tikwm.com/api/", data={"url": url, "hd": 1}, headers=headers, timeout=20)
+            data = resp.json().get("data", {})
+            if query.data == "vid": await query.message.reply_video(video=data.get("hdplay") or data.get("play"), caption=f"📌 تمت الاستضافة بواسطة {CHANNEL_USERNAME}")
+            elif query.data == "aud": await query.message.reply_audio(audio=data.get("music"), caption=f"🎵 {data.get('title')}\n📌 {CHANNEL_USERNAME}")
+        await query.message.delete()
+    except Exception:
+        await query.edit_message_text("❌ فشل التحميل، الرابط قد يكون خاصاً أو مقيداً.")
 
 def main():
     app = Application.builder().token(TOKEN).build()
