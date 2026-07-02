@@ -23,14 +23,10 @@ def init_db():
 
 init_db()
 
-async def check_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
+async def check_subscription(context, user_id):
     try:
-        member = await context.bot.get_chat_member(CHANNEL_ID, user_id)
-        if member.status in ['left', 'kicked']:
-            await update.effective_message.reply_text(f"⚠️ يجب عليك الاشتراك في القناة أولاً:\n{CHANNEL_USERNAME}")
-            return False
-        return True
+        member = await context.bot.get_chat_member(chat_id=CHANNEL_ID, user_id=user_id)
+        return member.status in ['member', 'administrator', 'creator']
     except: return False
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -66,12 +62,11 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     views = conn.cursor().execute("SELECT views FROM stats WHERE id = 1").fetchone()[0]
     conn.close()
     keyboard = [[InlineKeyboardButton("📢 إذاعة رسالة للجميع", callback_data="admin_bc")]]
-    await update.message.reply_text(f"🔹 **لوحة التحكم الخاصة بالمدير:**\n\n👥 عدد المشتركين: {count}\n👀 إجمالي المشاهدات: {views}", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+    await update.message.reply_text(f"🔹 **لوحة التحكم للمدير:**\n👥 المشتركين: {count}\n👀 المشاهدات: {views}", reply_markup=InlineKeyboardMarkup(keyboard))
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not await check_subscription(update, context): return
-    
     text = update.message.text
+    if not text: return
     user_id = update.message.from_user.id
     
     if user_id == ADMIN_ID and context.user_data.get('waiting_for_bc'):
@@ -82,16 +77,20 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for user in users:
             try: await context.bot.send_message(chat_id=user[0], text=text)
             except: pass
-        await update.message.reply_text("✅ تمت الإذاعة بنجاح.")
+        await update.message.reply_text("✅ تمت الإذاعة.")
         return
     
+    if not await check_subscription(context, user_id):
+        await update.message.reply_text(f"⚠️ يجب عليك الاشتراك في القناة أولاً:\n{CHANNEL_USERNAME}")
+        return
+        
     context.user_data['last_url'] = text
     if 'tiktok.com' in text or 'vt.tiktok.com' in text:
-        keyboard = [[InlineKeyboardButton("🎬 تحميل فيديو (بدون علامة)", callback_data="vid")], [InlineKeyboardButton("🎵 تحميل كملف صوتي (MP3)", callback_data="aud")]]
-        await update.message.reply_text("📥 اختر الصيغة التي تريد التحميل بها:", reply_markup=InlineKeyboardMarkup(keyboard))
+        keyboard = [[InlineKeyboardButton("🎬 فيديو", callback_data="vid")], [InlineKeyboardButton("🎵 صوتي", callback_data="aud")]]
+        await update.message.reply_text("📥 اختر الصيغة:", reply_markup=InlineKeyboardMarkup(keyboard))
     elif 'instagram.com' in text:
-        keyboard = [[InlineKeyboardButton("🎬 تحميل فيديو الانستقرام", callback_data="vid_ig")]]
-        await update.message.reply_text("📥 تم التعرف على رابط الانستقرام:", reply_markup=InlineKeyboardMarkup(keyboard))
+        keyboard = [[InlineKeyboardButton("🎬 فيديو انستقرام", callback_data="vid_ig")]]
+        await update.message.reply_text("📥 تم التعرف على الرابط:", reply_markup=InlineKeyboardMarkup(keyboard))
 
 async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -100,10 +99,10 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data['waiting_for_bc'] = True
         await query.message.reply_text("📥 أرسل النص للإذاعة:")
         return
-    if not await check_subscription(update, context): return
+    if not await check_subscription(context, query.from_user.id): return
     
     url = context.user_data.get('last_url')
-    await query.edit_message_text("⏳ جاري التحميل، يرجى الانتظار...")
+    await query.edit_message_text("⏳ جاري التحميل...")
     try:
         if query.data == "vid_ig":
             async with async_playwright() as p:
@@ -111,19 +110,19 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 ctx = await browser.new_context(user_agent="Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile/15E148 Safari/604.1")
                 page = await ctx.new_page()
                 await page.goto(url)
-                video_element = await page.wait_for_selector("video", timeout=15000)
+                video_element = await page.wait_for_selector("video", timeout=20000)
                 video_url = await video_element.get_attribute("src")
                 await browser.close()
-                await query.message.reply_video(video=video_url, caption=f"📌 تمت الاستضافة بواسطة {CHANNEL_USERNAME}")
+                await query.message.reply_video(video=video_url, caption=f"📌 بواسطة {CHANNEL_USERNAME}")
         else:
             headers = {'User-Agent': 'Mozilla/5.0'}
             resp = requests.post("https://www.tikwm.com/api/", data={"url": url, "hd": 1}, headers=headers, timeout=20)
             data = resp.json().get("data", {})
-            if query.data == "vid": await query.message.reply_video(video=data.get("hdplay") or data.get("play"), caption=f"📌 تمت الاستضافة بواسطة {CHANNEL_USERNAME}")
+            if query.data == "vid": await query.message.reply_video(video=data.get("hdplay") or data.get("play"), caption=f"📌 بواسطة {CHANNEL_USERNAME}")
             elif query.data == "aud": await query.message.reply_audio(audio=data.get("music"), caption=f"🎵 {data.get('title')}\n📌 {CHANNEL_USERNAME}")
         await query.message.delete()
-    except Exception as e:
-        await query.edit_message_text("❌ فشل التحميل، الرابط قد يكون خاصاً أو مقيداً.")
+    except Exception:
+        await query.edit_message_text("❌ فشل التحميل.")
 
 def main():
     app = Application.builder().token(TOKEN).build()
