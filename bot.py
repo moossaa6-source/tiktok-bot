@@ -1,8 +1,6 @@
 import sqlite3
 import requests
 import logging
-import re
-import yt_dlp
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 
@@ -54,7 +52,7 @@ async def share(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message.from_user.id != ADMIN_ID: return
-    conn = sqlite3.connect('bot_data.db')
+    conn = sqlite3.connect('db_data.db') # تم التأكد من الاسم
     count = conn.cursor().execute("SELECT count(*) FROM users").fetchone()[0]
     views = conn.cursor().execute("SELECT views FROM stats WHERE id = 1").fetchone()[0]
     conn.close()
@@ -83,8 +81,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif 'instagram.com' in text:
         keyboard = [[InlineKeyboardButton("🎬 تحميل فيديو الانستقرام", callback_data="vid_ig")]]
         await update.message.reply_text("📥 تم التعرف على رابط الانستقرام:", reply_markup=InlineKeyboardMarkup(keyboard))
-    else:
-        await update.message.reply_text("❌ عذراً، الرجاء إرسال رابط تيك توك أو انستقرام صحيح.")
 
 # --- 4. معالجة التحميل ---
 async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -100,21 +96,20 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     try:
         if query.data == "vid_ig":
-            proxies = {'http': 'http://103.151.126.130:80', 'https': 'http://103.151.126.130:80'}
-            headers = {'User-Agent': 'Mozilla/5.0'}
-            response = requests.get(url, proxies=proxies, headers=headers, timeout=15)
-            video_url = re.search(r'video_url":"(.*?)"', response.text).group(1).replace("\\u0026", "&")
-            await query.message.reply_video(video=video_url, caption=f"📌 تمت الاستضافة بواسطة {CHANNEL_USERNAME}")
+            # استخدام API مباشر للتحميل يتخطى الحظر
+            resp = requests.get(f"https://snapinsta.app/api/ajax/getMedia?url={url}").json()
+            v_url = resp['data'][0]['video_url']
+            await query.message.reply_video(video=v_url, caption=f"📌 تمت الاستضافة بواسطة {CHANNEL_USERNAME}")
         else:
             headers = {'User-Agent': 'Mozilla/5.0'}
-            response = requests.post("https://www.tikwm.com/api/", data={"url": url, "hd": 1}, headers=headers, timeout=20)
-            data = response.json().get("data", {})
+            resp = requests.post("https://www.tikwm.com/api/", data={"url": url, "hd": 1}, headers=headers, timeout=20)
+            data = resp.json().get("data", {})
             if query.data == "vid": await query.message.reply_video(video=data.get("hdplay") or data.get("play"), caption=f"📌 تمت الاستضافة بواسطة {CHANNEL_USERNAME}")
             elif query.data == "aud": await query.message.reply_audio(audio=data.get("music"), caption=f"🎵 {data.get('title')}\n📌 {CHANNEL_USERNAME}")
         await query.message.delete()
     except Exception as e:
         logging.error(f"Error: {e}")
-        await query.edit_message_text("❌ فشل التحميل. يرجى تجربة رابط عام.")
+        await query.edit_message_text("❌ فشل التحميل، الرابط قد يكون خاصاً.")
 
 def main():
     app = Application.builder().token(TOKEN).build()
@@ -123,7 +118,6 @@ def main():
     app.add_handler(CommandHandler("admin", admin_panel))
     app.add_handler(CallbackQueryHandler(button_click))
     app.add_handler(MessageHandler(filters.TEXT & filters.ChatType.PRIVATE, handle_message))
-    print("🚀 البوت يعمل الآن بكامل الميزات...")
     app.run_polling()
 
 if __name__ == "__main__":
