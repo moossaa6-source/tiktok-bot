@@ -12,7 +12,7 @@ TOKEN = "8895284125:AAEKiyC1Jlj-6vBpyz0-PLylDudh6S3o1w4"
 CHANNEL_USERNAME = '@MyDesign_Channels'
 ADMIN_ID = 8192715650
 
-# --- 1. إعداد قاعدة البيانات ---
+# --- 1. قاعدة البيانات ---
 def init_db():
     conn = sqlite3.connect('bot_data.db')
     cursor = conn.cursor()
@@ -24,7 +24,7 @@ def init_db():
 
 init_db()
 
-# --- 2. الأوامر الأساسية ---
+# --- 2. الأوامر ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     username = update.message.from_user.username
@@ -82,8 +82,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif 'instagram.com' in text:
         keyboard = [[InlineKeyboardButton("🎬 تحميل فيديو انستقرام", callback_data="vid_ig")]]
         await update.message.reply_text("📥 تم التعرف على رابط الانستقرام:", reply_markup=InlineKeyboardMarkup(keyboard))
-    else:
-        await update.message.reply_text("❌ أرسل رابط تيك توك أو انستقرام.")
 
 # --- 4. معالجة التحميل ---
 async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -99,14 +97,10 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     try:
         if query.data == "vid_ig":
-            try:
-                ydl_opts = {'quiet': True, 'user_agent': 'Mozilla/5.0', 'format': 'best'}
-                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                    info = ydl.extract_info(url, download=False)
-                    await query.message.reply_video(video=info['url'], caption=f"📌 تمت الاستضافة بواسطة {CHANNEL_USERNAME}")
-            except:
-                resp = requests.get(f"https://snapinsta.app/api/ajax/getMedia?url={url}", timeout=10).json()
-                await query.message.reply_video(video=resp['data'][0]['video_url'], caption=f"📌 تمت الاستضافة بواسطة {CHANNEL_USERNAME}")
+            # API وسيط لتجاوز حظر انستقرام
+            response = requests.get(f"https://snapinsta.app/api/ajax/getMedia?url={url}", timeout=10).json()
+            video_url = response['data'][0]['video_url']
+            await query.message.reply_video(video=video_url, caption=f"📌 تمت الاستضافة بواسطة {CHANNEL_USERNAME}")
         else:
             headers = {'User-Agent': 'Mozilla/5.0'}
             resp = requests.post("https://www.tikwm.com/api/", data={"url": url, "hd": 1}, headers=headers, timeout=20)
@@ -115,7 +109,6 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
             elif query.data == "aud": await query.message.reply_audio(audio=data.get("music"), caption=f"🎵 {data.get('title')}\n📌 {CHANNEL_USERNAME}")
         await query.message.delete()
     except Exception as e:
-        logging.error(f"Error: {e}")
         await query.edit_message_text("❌ فشل التحميل، الرابط قد يكون مقيداً.")
 
 def main():
@@ -125,7 +118,6 @@ def main():
     app.add_handler(CommandHandler("admin", admin_panel))
     app.add_handler(CallbackQueryHandler(button_click))
     app.add_handler(MessageHandler(filters.TEXT & filters.ChatType.PRIVATE, handle_message))
-    print("🚀 البوت يعمل الآن بكامل الميزات...")
     app.run_polling()
 
 if __name__ == "__main__":
