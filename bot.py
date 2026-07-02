@@ -2,10 +2,11 @@ import sqlite3
 import requests
 import asyncio
 import logging
+import yt_dlp
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 
-# إعداد السجلات
+# إعداد سجلات النظام
 logging.basicConfig(level=logging.INFO)
 
 TOKEN = "8895284125:AAEKiyC1Jlj-6vBpyz0-PLylDudh6S3o1w4"
@@ -24,7 +25,7 @@ def init_db():
 
 init_db()
 
-# --- 2. الأوامر الأساسية ---
+# --- 2. أوامر المستخدمين ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     username = update.message.from_user.username
@@ -93,15 +94,14 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.message.reply_text("📥 أرسل النص الذي تريد إذاعته الآن:")
         return
     url = context.user_data.get('last_url')
-    await query.edit_message_text("⏳ جاري جلب البيانات ومعالجة الطلب...")
+    await query.edit_message_text("⏳ جاري جلب البيانات...")
     
     try:
         if query.data == "vid_ig":
-            # استخدام API وسيط يتخطى الحظر بدون الحاجة لكوكيز
-            api_url = f"https://api.douyin.wtf/api?url={url}"
-            response = requests.get(api_url).json()
-            video_url = response.get('video_data', {}).get('nwm_video_url_HQ') or response.get('video_data', {}).get('nwm_video_url')
-            if not video_url: raise Exception("No URL found")
+            ydl_opts = {'format': 'best', 'quiet': True}
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=False)
+                video_url = info.get('url')
             await query.message.reply_video(video=video_url, caption=f"📌 تمت الاستضافة بواسطة {CHANNEL_USERNAME}")
         else:
             headers = {'User-Agent': 'Mozilla/5.0'}
@@ -112,7 +112,7 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.message.delete()
     except Exception as e:
         logging.error(f"Error: {e}")
-        await query.edit_message_text("❌ حدث خطأ، تأكد من أن الرابط عام وليس خاصاً.")
+        await query.edit_message_text("❌ فشل التحميل، تأكد أن الرابط عام.")
 
 def main():
     app = Application.builder().token(TOKEN).build()
