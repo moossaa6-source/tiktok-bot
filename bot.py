@@ -2,11 +2,11 @@ import sqlite3
 import requests
 import asyncio
 import logging
-import re
+import yt_dlp
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 
-# إعداد سجلات النظام لتتبع الأخطاء بدقة
+# إعداد سجلات النظام
 logging.basicConfig(level=logging.INFO)
 
 TOKEN = "8895284125:AAEKiyC1Jlj-6vBpyz0-PLylDudh6S3o1w4"
@@ -25,23 +25,19 @@ def init_db():
 
 init_db()
 
-# --- 2. أوامر المستخدمين (Start, Share) ---
+# --- 2. أوامر المستخدمين ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     username = update.message.from_user.username
-    
     conn = sqlite3.connect('bot_data.db')
     cursor = conn.cursor()
     cursor.execute("UPDATE stats SET views = views + 1 WHERE id = 1")
-    
     cursor.execute("SELECT user_id FROM users WHERE user_id = ?", (user_id,))
     if not cursor.fetchone():
         args = context.args
         referred_by = int(args[0]) if args and args[0].isdigit() else None
-        
         if referred_by and referred_by != user_id:
             cursor.execute("UPDATE users SET points = points + 1 WHERE user_id = ?", (referred_by,))
-            
         cursor.execute("INSERT INTO users (user_id, username, referred_by) VALUES (?, ?, ?)", (user_id, username, referred_by))
         conn.commit()
     conn.close()
@@ -51,164 +47,96 @@ async def share(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     bot_me = await context.bot.get_me()
     bot_username = bot_me.username
-    
     conn = sqlite3.connect('bot_data.db')
     result = conn.cursor().execute("SELECT points FROM users WHERE user_id = ?", (user_id,)).fetchone()
     points = result[0] if result else 0
     conn.close()
-    
     link = f"https://t.me/{bot_username}?start={user_id}"
     await update.message.reply_text(f"👥 رابط الدعوة الخاص بك:\n{link}\n\n📊 نقاطك الحالية: {points}")
 
-# --- 3. أوامر لوحة التحكم (Admin Panel) ---
+# --- 3. لوحة التحكم ---
 async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.message.from_user.id != ADMIN_ID: 
-        return
-        
+    if update.message.from_user.id != ADMIN_ID: return
     conn = sqlite3.connect('bot_data.db')
     count = conn.cursor().execute("SELECT count(*) FROM users").fetchone()[0]
     views = conn.cursor().execute("SELECT views FROM stats WHERE id = 1").fetchone()[0]
     conn.close()
-    
     keyboard = [[InlineKeyboardButton("📢 إذاعة رسالة للجميع", callback_data="admin_bc")]]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    await update.message.reply_text(
-        f"🔹 **لوحة التحكم الخاصة بالمدير:**\n\n👥 عدد المشتركين: {count}\n👀 إجمالي المشاهدات: {views}", 
-        reply_markup=reply_markup,
-        parse_mode='Markdown'
-    )
+    await update.message.reply_text(f"🔹 **لوحة التحكم الخاصة بالمدير:**\n\n👥 عدد المشتركين: {count}\n👀 إجمالي المشاهدات: {views}", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
 
-# --- 4. معالجة الرسائل النصية (الروابط والإذاعة) ---
+# --- 4. معالجة الرسائل ---
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
     user_id = update.message.from_user.id
-    
     if user_id == ADMIN_ID and context.user_data.get('waiting_for_bc'):
         context.user_data['waiting_for_bc'] = False
         conn = sqlite3.connect('bot_data.db')
         users = conn.cursor().execute("SELECT user_id FROM users").fetchall()
         conn.close()
-        
-        success_count = 0
         for user in users:
-            try: 
-                await context.bot.send_message(chat_id=user[0], text=text)
-                success_count += 1
-                await asyncio.sleep(0.05)
-            except Exception:
-                pass
-        await update.message.reply_text(f"✅ تمت الإذاعة بنجاح لـ {success_count} مستخدم.")
+            try: await context.bot.send_message(chat_id=user[0], text=text)
+            except: pass
+        await update.message.reply_text("✅ تمت الإذاعة بنجاح.")
         return
-        
     context.user_data['last_url'] = text
-    
     if 'tiktok.com' in text:
-        keyboard = [
-            [InlineKeyboardButton("🎬 تحميل فيديو (بدون علامة)", callback_data="vid")], 
-            [InlineKeyboardButton("🎵 تحميل كملف صوتي (MP3)", callback_data="aud")]
-        ]
-        await update.message.reply_text("📥 اختر الصيغة التي تريد التحميل بها:", reply_markup=InlineKeyboardMarkup(keyboard))
-    
+        keyboard = [[InlineKeyboardButton("🎬 تحميل فيديو (بدون علامة)", callback_data="vid")], [InlineKeyboardButton("🎵 تحميل كملف صوتي (MP3)", callback_data="aud")]]
+        await update.message.reply_text("📥 اختر الصيغة:", reply_markup=InlineKeyboardMarkup(keyboard))
     elif 'instagram.com' in text:
-        keyboard = [
-            [InlineKeyboardButton("🎬 تحميل فيديو الانستقرام", callback_data="vid_ig")]
-        ]
+        keyboard = [[InlineKeyboardButton("🎬 تحميل فيديو الانستقرام", callback_data="vid_ig")]]
         await update.message.reply_text("📥 تم التعرف على رابط الانستقرام:", reply_markup=InlineKeyboardMarkup(keyboard))
-        
     else:
-        await update.message.reply_text("❌ عذراً، الرجاء إرسال رابط تيك توك أو انستقرام صحيح.")
+        await update.message.reply_text("❌ رابط غير مدعوم.")
 
-# --- 5. معالجة الأزرار (Callbacks) ---
+# --- 5. تحميل الملفات ---
 async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    
     if query.data == "admin_bc":
         context.user_data['waiting_for_bc'] = True
-        await query.message.reply_text("📥 أرسل النص الذي تريد إذاعته الآن:")
+        await query.message.reply_text("📥 أرسل النص للإذاعة:")
         return
-        
     url = context.user_data.get('last_url')
-    if not url: 
-        return await query.edit_message_text("❌ انتهت صلاحية الجلسة. أرسل الرابط مرة أخرى.")
-        
-    await query.edit_message_text("⏳ جاري جلب البيانات ومعالجة الطلب...")
+    await query.edit_message_text("⏳ جاري المعالجة...")
     
     headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36'}
 
-    # --- تحميل الانستقرام عبر السيرفرات البديلة المتنقلة ---
+    # تحميل الانستقرام الجديد بـ yt-dlp
     if query.data == "vid_ig":
         try:
-            video_url = None
-            proxies = ["rxinstagram.com", "ddinstagram.com", "ig.ft0.com"]
-            
-            for proxy in proxies:
-                try:
-                    ig_proxy_url = url.replace("instagram.com", proxy).replace("www.", "")
-                    res = requests.get(ig_proxy_url, headers=headers, timeout=10)
-                    match = re.search(r'<meta property="og:video" content="([^"]+)"', res.text)
-                    if match:
-                        video_url = match.group(1).replace("&amp;", "&")
-                        break
-                except Exception as loop_e:
-                    logging.warning(f"Failed with {proxy}: {loop_e}")
-                    continue
-            
-            if video_url:
-                await query.message.reply_video(video=video_url, caption=f"📌 تمت الاستضافة بواسطة {CHANNEL_USERNAME}")
-                await query.message.delete()
-            else:
-                raise Exception("السيرفرات البديلة لا تستجيب حالياً")
-                
+            ydl_opts = {'format': 'best', 'quiet': True}
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=False)
+                video_url = info.get('url')
+            await query.message.reply_video(video=video_url, caption=f"📌 تمت الاستضافة بواسطة {CHANNEL_USERNAME}")
+            await query.message.delete()
         except Exception as e:
-            logging.error(f"IG Download Error: {e}")
-            await query.edit_message_text("❌ حدث خطأ أثناء جلب فيديو الانستقرام، تأكد من أن الرابط صحيح أو أن الحساب ليس خاصاً.")
+            logging.error(f"IG Error: {e}")
+            await query.edit_message_text("❌ فشل تحميل الانستقرام، يرجى المحاولة لاحقاً.")
         return
 
-    # --- تحميل التيك توك ---
+    # تحميل التيك توك
     try:
         response = requests.post("https://www.tikwm.com/api/", data={"url": url, "hd": 1}, headers=headers, timeout=20)
         data = response.json().get("data", {})
-        
         if query.data == "vid":
             video_url = data.get("hdplay") or data.get("play")
-            if not video_url:
-                raise Exception("لا يوجد رابط فيديو مباشر")
             await query.message.reply_video(video=video_url, caption=f"📌 تمت الاستضافة بواسطة {CHANNEL_USERNAME}")
-            
         elif query.data == "aud":
-            audio_url = data.get("music")
-            title = data.get("title", "الصوت")
-            if not audio_url:
-                raise Exception("لا يوجد رابط صوت مباشر")
-            await query.message.reply_audio(audio=audio_url, caption=f"🎵 {title}\n📌 {CHANNEL_USERNAME}")
-            
+            await query.message.reply_audio(audio=data.get("music"), caption=f"🎵 {data.get('title')}\n📌 {CHANNEL_USERNAME}")
         await query.message.delete()
-    except Exception as e:
-        logging.error(f"TikTok Download Error: {e}")
-        await query.edit_message_text("❌ حدث خطأ أثناء جلب الفيديو، تأكد من أن الرابط صحيح أو أن الفيديو ليس خاصاً.")
+    except:
+        await query.edit_message_text("❌ حدث خطأ في تيك توك.")
 
-# --- 6. التشغيل الآمن ---
 def main():
     app = Application.builder().token(TOKEN).build()
-    
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("share", share))
     app.add_handler(CommandHandler("admin", admin_panel))
     app.add_handler(CallbackQueryHandler(button_click))
     app.add_handler(MessageHandler(filters.TEXT & filters.ChatType.PRIVATE, handle_message))
-    
-    async def run_bot():
-        async with app:
-            await app.initialize()
-            await app.start()
-            await app.updater.start_polling(drop_pending_updates=True)
-            
-            print("🚀 البوت يعمل الآن بكامل الميزات وبشكل مستقر...")
-            await asyncio.Event().wait()
-
-    asyncio.run(run_bot())
+    print("🚀 البوت يعمل الآن...")
+    app.run_polling()
 
 if __name__ == "__main__":
     main()
