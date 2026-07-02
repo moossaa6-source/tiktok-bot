@@ -2,6 +2,7 @@ import sqlite3
 import requests
 import asyncio
 import logging
+import re
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 
@@ -24,7 +25,7 @@ def init_db():
 
 init_db()
 
-# --- 2. الأوامر الأساسية ---
+# --- 2. أوامر المستخدمين (Start, Share) ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     username = update.message.from_user.username
@@ -36,7 +37,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         args = context.args
         referred_by = int(args[0]) if args and args[0].isdigit() else None
         if referred_by and referred_by != user_id:
-            cursor.execute("UPDATE users SET points = points + 1 WHERE referred_by = ?", (referred_by,))
+            cursor.execute("UPDATE users SET points = points + 1 WHERE user_id = ?", (referred_by,))
         cursor.execute("INSERT INTO users (user_id, username, referred_by) VALUES (?, ?, ?)", (user_id, username, referred_by))
         conn.commit()
     conn.close()
@@ -46,10 +47,12 @@ async def share(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     bot_me = await context.bot.get_me()
     conn = sqlite3.connect('bot_data.db')
-    points = conn.cursor().execute("SELECT points FROM users WHERE user_id = ?", (user_id,)).fetchone()
+    result = conn.cursor().execute("SELECT points FROM users WHERE user_id = ?", (user_id,)).fetchone()
+    points = result[0] if result else 0
     conn.close()
-    await update.message.reply_text(f"👥 رابط الدعوة الخاص بك:\nhttps://t.me/{bot_me.username}?start={user_id}\n\n📊 نقاطك الحالية: {points[0] if points else 0}")
+    await update.message.reply_text(f"👥 رابط الدعوة الخاص بك:\nhttps://t.me/{bot_me.username}?start={user_id}\n\n📊 نقاطك الحالية: {points}")
 
+# --- 3. لوحة التحكم (Admin) ---
 async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message.from_user.id != ADMIN_ID: return
     conn = sqlite3.connect('bot_data.db')
@@ -57,55 +60,61 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     views = conn.cursor().execute("SELECT views FROM stats WHERE id = 1").fetchone()[0]
     conn.close()
     keyboard = [[InlineKeyboardButton("📢 إذاعة رسالة للجميع", callback_data="admin_bc")]]
-    await update.message.reply_text(f"🔹 لوحة التحكم:\n👥 المشتركين: {count}\n👀 المشاهدات: {views}", reply_markup=InlineKeyboardMarkup(keyboard))
+    await update.message.reply_text(f"🔹 **لوحة التحكم الخاصة بالمدير:**\n\n👥 عدد المشتركين: {count}\n👀 إجمالي المشاهدات: {views}", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
 
-# --- 3. معالجة الرسائل ---
+# --- 4. معالجة الرسائل ---
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
     user_id = update.message.from_user.id
     if user_id == ADMIN_ID and context.user_data.get('waiting_for_bc'):
         context.user_data['waiting_for_bc'] = False
-        users = sqlite3.connect('bot_data.db').cursor().execute("SELECT user_id FROM users").fetchall()
+        conn = sqlite3.connect('bot_data.db')
+        users = conn.cursor().execute("SELECT user_id FROM users").fetchall()
+        conn.close()
         for user in users:
             try: await context.bot.send_message(chat_id=user[0], text=text)
             except: pass
-        await update.message.reply_text("✅ تمت الإذاعة.")
+        await update.message.reply_text("✅ تمت الإذاعة بنجاح.")
         return
     context.user_data['last_url'] = text
     if 'tiktok.com' in text:
-        await update.message.reply_text("📥 اختر الصيغة:", reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("🎬 تحميل فيديو (بدون علامة)", callback_data="vid")],
-            [InlineKeyboardButton("🎵 تحميل كملف صوتي (MP3)", callback_data="aud")]]))
+        keyboard = [[InlineKeyboardButton("🎬 تحميل فيديو (بدون علامة)", callback_data="vid")], [InlineKeyboardButton("🎵 تحميل كملف صوتي (MP3)", callback_data="aud")]]
+        await update.message.reply_text("📥 اختر الصيغة التي تريد التحميل بها:", reply_markup=InlineKeyboardMarkup(keyboard))
     elif 'instagram.com' in text:
-        await update.message.reply_text("📥 تم التعرف على رابط الانستقرام:", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🎬 تحميل فيديو الانستقرام", callback_data="vid_ig")]]))
+        keyboard = [[InlineKeyboardButton("🎬 تحميل فيديو الانستقرام", callback_data="vid_ig")]]
+        await update.message.reply_text("📥 تم التعرف على رابط الانستقرام:", reply_markup=InlineKeyboardMarkup(keyboard))
+    else:
+        await update.message.reply_text("❌ عذراً، الرجاء إرسال رابط تيك توك أو انستقرام صحيح.")
 
-# --- 4. معالجة التحميل ---
+# --- 5. معالجة الأزرار (Callbacks) ---
 async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     if query.data == "admin_bc":
         context.user_data['waiting_for_bc'] = True
-        await query.message.reply_text("أرسل النص للإذاعة:")
+        await query.message.reply_text("📥 أرسل النص الذي تريد إذاعته الآن:")
         return
     url = context.user_data.get('last_url')
-    await query.edit_message_text("⏳ جاري المعالجة من سيرفر وسيط...")
+    await query.edit_message_text("⏳ جاري جلب البيانات ومعالجة الطلب...")
+    
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'}
     
     try:
-        # تحميل الانستقرام عبر SnapInsta API
         if query.data == "vid_ig":
-            res = requests.get(f"https://snapinsta.app/api/ajax/getMedia?url={url}").json()
-            video_url = res['data'][0]['videoUrl']
-            await query.message.reply_video(video=video_url, caption=f"📌 {CHANNEL_USERNAME}")
-        
-        # تحميل التيك توك
+            # تحديث الرابط لـ ddinstagram
+            ig_url = url.replace("instagram.com", "ddinstagram.com").replace("www.", "")
+            await query.message.reply_video(video=ig_url, caption=f"📌 تمت الاستضافة بواسطة {CHANNEL_USERNAME}")
         else:
-            data = requests.post("https://www.tikwm.com/api/", data={"url": url, "hd": 1}).json()['data']
-            if query.data == "vid": await query.message.reply_video(video=data['hdplay'] or data['play'], caption=f"📌 {CHANNEL_USERNAME}")
-            else: await query.message.reply_audio(audio=data['music'], caption=f"🎵 {data['title']}\n📌 {CHANNEL_USERNAME}")
-            
+            response = requests.post("https://www.tikwm.com/api/", data={"url": url, "hd": 1}, headers=headers, timeout=20)
+            data = response.json().get("data", {})
+            if query.data == "vid":
+                await query.message.reply_video(video=data.get("hdplay") or data.get("play"), caption=f"📌 تمت الاستضافة بواسطة {CHANNEL_USERNAME}")
+            elif query.data == "aud":
+                await query.message.reply_audio(audio=data.get("music"), caption=f"🎵 {data.get('title')}\n📌 {CHANNEL_USERNAME}")
         await query.message.delete()
     except Exception as e:
-        await query.edit_message_text("❌ حدث خطأ، تأكد من أن الرابط عام وليس خاصاً.")
+        logging.error(f"Error: {e}")
+        await query.edit_message_text("❌ حدث خطأ، تأكد من أن الرابط صحيح أو أن الفيديو ليس خاصاً.")
 
 def main():
     app = Application.builder().token(TOKEN).build()
@@ -114,6 +123,7 @@ def main():
     app.add_handler(CommandHandler("admin", admin_panel))
     app.add_handler(CallbackQueryHandler(button_click))
     app.add_handler(MessageHandler(filters.TEXT & filters.ChatType.PRIVATE, handle_message))
+    print("🚀 البوت يعمل الآن بكامل الميزات وبشكل مستقر...")
     app.run_polling()
 
 if __name__ == "__main__":
