@@ -110,11 +110,14 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if query.data == "vid_ig":
             async with async_playwright() as p:
                 browser = await p.chromium.launch()
-                ctx = await browser.new_context(user_agent="Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile/15E148 Safari/604.1")
+                ctx = await browser.new_context(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36")
                 page = await ctx.new_page()
                 await page.goto(url)
-                video_element = await page.wait_for_selector("video", timeout=20000)
-                video_url = await video_element.get_attribute("src")
+                try:
+                    video_element = await page.wait_for_selector("video", timeout=25000)
+                    video_url = await video_element.get_attribute("src")
+                except:
+                    video_url = await page.evaluate("document.querySelector('video').src")
                 await browser.close()
                 await query.message.reply_video(video=video_url, caption=f"📌 تمت الاستضافة بواسطة {CHANNEL_USERNAME}")
         else:
