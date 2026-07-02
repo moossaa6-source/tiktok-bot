@@ -135,36 +135,32 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
     await query.edit_message_text("⏳ جاري جلب البيانات ومعالجة الطلب...")
     
-    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36'}
 
-    # --- تحميل الانستقرام (المحدث لاستخراج MP4 مباشرة) ---
+    # --- تحميل الانستقرام عبر السيرفرات البديلة المتنقلة ---
     if query.data == "vid_ig":
         try:
-            # استبدال النطاق للوصول إلى سيرفر بديل
-            ig_proxy_url = url.replace("instagram.com", "ddinstagram.com").replace("www.", "")
+            video_url = None
+            proxies = ["rxinstagram.com", "ddinstagram.com", "ig.ft0.com"]
             
-            # جلب الصفحة للبحث عن رابط الفيديو المباشر
-            res = requests.get(ig_proxy_url, headers=headers, timeout=20)
+            for proxy in proxies:
+                try:
+                    ig_proxy_url = url.replace("instagram.com", proxy).replace("www.", "")
+                    res = requests.get(ig_proxy_url, headers=headers, timeout=10)
+                    match = re.search(r'<meta property="og:video" content="([^"]+)"', res.text)
+                    if match:
+                        video_url = match.group(1).replace("&amp;", "&")
+                        break
+                except Exception as loop_e:
+                    logging.warning(f"Failed with {proxy}: {loop_e}")
+                    continue
             
-            # استخراج رابط .mp4 من الكود المصدري للصفحة
-            match = re.search(r'<meta property="og:video" content="([^"]+)"', res.text)
-            
-            if match:
-                video_url = match.group(1).replace("&amp;", "&")
+            if video_url:
                 await query.message.reply_video(video=video_url, caption=f"📌 تمت الاستضافة بواسطة {CHANNEL_USERNAME}")
+                await query.message.delete()
             else:
-                # محاولة بسيرفر آخر إذا فشل الأول
-                ig_proxy_url_2 = url.replace("instagram.com", "rxinstagram.com").replace("www.", "")
-                res2 = requests.get(ig_proxy_url_2, headers=headers, timeout=20)
-                match2 = re.search(r'<meta property="og:video" content="([^"]+)"', res2.text)
+                raise Exception("السيرفرات البديلة لا تستجيب حالياً")
                 
-                if match2:
-                    video_url2 = match2.group(1).replace("&amp;", "&")
-                    await query.message.reply_video(video=video_url2, caption=f"📌 تمت الاستضافة بواسطة {CHANNEL_USERNAME}")
-                else:
-                    raise Exception("لم يتم العثور على رابط فيديو مباشر")
-                    
-            await query.message.delete()
         except Exception as e:
             logging.error(f"IG Download Error: {e}")
             await query.edit_message_text("❌ حدث خطأ أثناء جلب فيديو الانستقرام، تأكد من أن الرابط صحيح أو أن الحساب ليس خاصاً.")
