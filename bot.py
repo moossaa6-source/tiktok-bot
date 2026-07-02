@@ -5,7 +5,7 @@ import yt_dlp
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 
-# --- إعداد السجلات ---
+# إعداد السجلات
 logging.basicConfig(level=logging.INFO)
 
 TOKEN = "8895284125:AAEKiyC1Jlj-6vBpyz0-PLylDudh6S3o1w4"
@@ -24,7 +24,7 @@ def init_db():
 
 init_db()
 
-# --- 2. الأوامر الأساسية ---
+# --- 2. الأوامر ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     username = update.message.from_user.username
@@ -58,7 +58,7 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     views = conn.cursor().execute("SELECT views FROM stats WHERE id = 1").fetchone()[0]
     conn.close()
     keyboard = [[InlineKeyboardButton("📢 إذاعة رسالة للجميع", callback_data="admin_bc")]]
-    await update.message.reply_text(f"🔹 **لوحة التحكم للمدير:**\n\n👥 عدد المشتركين: {count}\n👀 إجمالي المشاهدات: {views}", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+    await update.message.reply_text(f"🔹 **لوحة التحكم الخاصة بالمدير:**\n\n👥 عدد المشتركين: {count}\n👀 إجمالي المشاهدات: {views}", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
 
 # --- 3. معالجة الرسائل ---
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -77,42 +77,46 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     context.user_data['last_url'] = text
     if 'tiktok.com' in text:
-        keyboard = [[InlineKeyboardButton("🎬 تحميل فيديو", callback_data="vid")], [InlineKeyboardButton("🎵 تحميل صوت", callback_data="aud")]]
-        await update.message.reply_text("📥 اختر الصيغة:", reply_markup=InlineKeyboardMarkup(keyboard))
+        keyboard = [[InlineKeyboardButton("🎬 تحميل فيديو (بدون علامة)", callback_data="vid")], [InlineKeyboardButton("🎵 تحميل كملف صوتي (MP3)", callback_data="aud")]]
+        await update.message.reply_text("📥 اختر الصيغة التي تريد التحميل بها:", reply_markup=InlineKeyboardMarkup(keyboard))
     elif 'instagram.com' in text:
-        keyboard = [[InlineKeyboardButton("🎬 تحميل فيديو انستقرام", callback_data="vid_ig")]]
+        keyboard = [[InlineKeyboardButton("🎬 تحميل فيديو الانستقرام", callback_data="vid_ig")]]
         await update.message.reply_text("📥 تم التعرف على رابط الانستقرام:", reply_markup=InlineKeyboardMarkup(keyboard))
     else:
-        await update.message.reply_text("❌ أرسل رابط تيك توك أو انستقرام.")
+        await update.message.reply_text("❌ عذراً، الرجاء إرسال رابط تيك توك أو انستقرام صحيح.")
 
-# --- 4. معالجة التحميل (النسخة النهائية) ---
+# --- 4. معالجة التحميل ---
 async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     if query.data == "admin_bc":
         context.user_data['waiting_for_bc'] = True
-        await query.message.reply_text("📥 أرسل النص للإذاعة:")
+        await query.message.reply_text("📥 أرسل النص الذي تريد إذاعته الآن:")
         return
     
     url = context.user_data.get('last_url')
-    await query.edit_message_text("⏳ جاري المعالجة...")
+    await query.edit_message_text("⏳ جاري جلب البيانات...")
     
     try:
         if query.data == "vid_ig":
-            ydl_opts = {'quiet': True, 'format': 'best', 'user_agent': 'Mozilla/5.0'}
+            ydl_opts = {
+                'quiet': True,
+                'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+                'format': 'best'
+            }
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(url, download=False)
                 await query.message.reply_video(video=info['url'], caption=f"📌 تمت الاستضافة بواسطة {CHANNEL_USERNAME}")
         else:
             headers = {'User-Agent': 'Mozilla/5.0'}
-            resp = requests.post("https://www.tikwm.com/api/", data={"url": url, "hd": 1}, headers=headers, timeout=20)
-            data = resp.json().get("data", {})
+            response = requests.post("https://www.tikwm.com/api/", data={"url": url, "hd": 1}, headers=headers, timeout=20)
+            data = response.json().get("data", {})
             if query.data == "vid": await query.message.reply_video(video=data.get("hdplay") or data.get("play"), caption=f"📌 تمت الاستضافة بواسطة {CHANNEL_USERNAME}")
             elif query.data == "aud": await query.message.reply_audio(audio=data.get("music"), caption=f"🎵 {data.get('title')}\n📌 {CHANNEL_USERNAME}")
         await query.message.delete()
     except Exception as e:
         logging.error(f"Error: {e}")
-        await query.edit_message_text("❌ فشل التحميل، الرابط قد يكون مقيداً.")
+        await query.edit_message_text("❌ فشل التحميل، تأكد أن الرابط عام وليس خاصاً.")
 
 def main():
     app = Application.builder().token(TOKEN).build()
