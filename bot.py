@@ -23,7 +23,10 @@ def init_db():
 
 init_db()
 
+# التعديل هنا: استثناء الأدمن من شرط الاشتراك
 async def check_subscription(context, user_id):
+    if user_id == ADMIN_ID:
+        return True
     try:
         member = await context.bot.get_chat_member(chat_id=CHANNEL_ID, user_id=user_id)
         return member.status in ['member', 'administrator', 'creator']
