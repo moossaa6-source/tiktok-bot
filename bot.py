@@ -110,16 +110,19 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if query.data == "vid_ig":
             async with async_playwright() as p:
                 browser = await p.chromium.launch()
-                ctx = await browser.new_context(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36")
+                ctx = await browser.new_context(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36", viewport={'width': 1920, 'height': 1080})
                 page = await ctx.new_page()
-                await page.goto(url)
+                await page.goto(url, wait_until="domcontentloaded")
                 try:
                     video_element = await page.wait_for_selector("video", timeout=25000)
                     video_url = await video_element.get_attribute("src")
+                    if not video_url: video_url = await page.evaluate("document.querySelector('video').src")
                 except:
                     video_url = await page.evaluate("document.querySelector('video').src")
                 await browser.close()
-                await query.message.reply_video(video=video_url, caption=f"📌 تمت الاستضافة بواسطة {CHANNEL_USERNAME}")
+                if video_url and video_url.startswith("http"):
+                    await query.message.reply_video(video=video_url, caption=f"📌 تمت الاستضافة بواسطة {CHANNEL_USERNAME}")
+                else: raise Exception("فشل الرابط")
         else:
             headers = {'User-Agent': 'Mozilla/5.0'}
             resp = requests.post("https://www.tikwm.com/api/", data={"url": url, "hd": 1}, headers=headers, timeout=20)
